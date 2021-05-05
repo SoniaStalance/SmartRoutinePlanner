@@ -1,0 +1,4 @@
+{
+    "mongoURI": "mongodb+srv://sonia:sonia@cluster0.bryir.mongodb.net/db?retryWrites=true&w=majority",
+    "jwtSecret": "mysecrettoken"
+}

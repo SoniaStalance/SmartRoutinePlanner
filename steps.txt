@@ -1,0 +1,3652 @@
+---------------------------------------------------------------------------------
+                                PART ONE
+---------------------------------------------------------------------------------
+--1
+--CREATING EXPRESS SERVER AND INITIALIZING APP
+    Create /server.js
+
+    const express = require('express');
+    const app = express();
+
+    app.get('/',(req,res)=>res.send('API Running'));
+
+    const PORT = process.env.PORT || 5000;
+
+    app.listen(PORT, ()=>(console.log(`Server started on port ${PORT}`)));
+
+--2
+--CONNECTING TO MONGO 
+    Create /config/default.json
+        {
+            "mongoURI": "mongodb+srv://sonia:sonia@devconnector.voiv1.mongodb.net/<dbname>?retryWrites=true&w=majority"
+        }
+    
+    Create /config/db.js
+        const mongoose = require('mongoose');
+        const config = require('config')
+        const db = config.get('mongoURI');
+
+        const connectDB = async() => {
+            try{
+                await mongoose.connect(db,{useNewUrlParser: true, useUnifiedTopology: true});
+                console.log("Database connected")
+            }catch(err)
+            {
+                console.log(err);
+                process.exit(1);
+            }
+        };
+
+        module.exports = connectDB;
+
+    Add the following code snippet to server.js
+
+        const connectDB = require('./config/db');
+        connectDB();
+
+--3
+--CONNECTING ROUTES
+ Create routes/api/users.js
+ routes/api/auth.js
+ routes/api/profile.js
+ routes/api/posts.js
+
+    const express = require('express');
+    const router = express.Router();
+
+    router.get('/',(req,res)=>res.send('<filename> Route'));
+
+    module.exports = router;
+
+--4
+UPDATE server.js
+
+    const express = require('express');
+    const connectDB = require('./config/db');
+    const app = express();
+
+    connectDB();
+
+    app.get('/',(req,res)=>res.send('API Running'));
+
+    app.use('/api/users', require('./routes/api/users'));
+    app.use('/api/auth', require('./routes/api/auth'));
+    app.use('/api/posts', require('./routes/api/posts'));
+    app.use('/api/profile', require('./routes/api/profile'));
+
+    const PORT = process.env.PORT || 5000;
+
+    app.listen(PORT, ()=>(console.log(`Server started on port ${PORT}`)));
+
+--5 CREATE COLLECTIONS IN POSTMAN
+Create 3 folders: Users & Auth, Profile, Posts
+
+--6 CREATE MODELS
+Create models/User.js
+
+    const mongoose = require('mongoose');
+    const UserSchema = new mongoose.Schema({
+        name:{
+            type: String,
+            required: true
+        },
+        email:{
+            type:String,
+            required: true,
+            unique: true
+        },
+        password:{
+            type: String,
+            required: true
+        },
+        avatar:{
+            type: String
+        },
+        date:{
+            type: Date,
+            default: Date.now
+        }
+    });
+ 
+    module.exports = User = mongoose.model('user',UserSchema);
+
+--7 UPDATE users.js
+    const express = require('express');
+    const router = express.Router();
+
+    router.post('/',(req,res)=>{
+        console.log(req.body);
+        res.send('User Route');
+    });
+
+    module.exports = router;
+
+--8 UPDATE server.js
+
+    app.use(express.json({extended:false}));
+
+--9 FORM VALIDATION users.js
+    const express = require('express');
+    const router = express.Router();
+    const {check, validationResult} = require('express-validator');
+
+    router.post('/',
+    [
+        check('name','Name is required').not().isEmpty(),
+        check('email','Enter vaild email').isEmail(),
+        check('password','Min password length is 6').isLength({min: 6})
+    ],
+    (req,res)=>{
+        const errors = validationResult(req);
+        if(!errors.isEmpty())
+        {
+            return res.status(400).json({errors: errors.array()})
+        }
+        res.send('User Route');
+    });
+
+    module.exports = router;
+
+--10 UPDATE users.js
+
+    const express = require('express');
+    const router = express.Router();
+    const {check, validationResult} = require('express-validator');
+    const User = require('../../models/User');
+    const gravatar = require('gravatar');
+    const bcrypt = require('bcryptjs');
+
+    router.post('/',
+    [
+        check('name','Name is required').not().isEmpty(),
+        check('email','Enter vaild email').isEmail(),
+        check('password','Min password length is 6').isLength({min: 6})
+    ],
+    async (req,res)=>{
+        const errors = validationResult(req);
+        if(!errors.isEmpty())
+        {
+            return res.status(400).json({errors: errors.array()})
+        }
+
+        const {name, email, password} = req.body;
+
+        try{
+            let user = await User.findOne({email});
+            if(user){
+                return res.status(400).json({errors:[{msg: 'User already exits!'}]});
+            }
+
+            const avatar = gravatar.url(email,{
+                s:"200",
+                r:"pg",
+                d:"mm"
+            });
+        
+            user = new User({
+                name,
+                email,
+                avatar,
+                password
+            });
+        
+            const salt = await bcrypt.genSalt(10);
+            user.password = await bcrypt.hash(password, salt);
+
+            await user.save();
+
+            //return jsonwebtoken (due)
+            res.send('User Registered');
+        }catch(err){
+            console.log(err.message);
+            res.status(500).send('Server error');
+        }
+        
+    });
+
+    module.exports = router;
+
+---------------------------------------------------------------------------------
+                                PART TWO
+---------------------------------------------------------------------------------
+1-- UPDATE default.json
+    {
+        "mongoURI": "mongodb+srv://sonia:sonia@devconnector.voiv1.mongodb.net/<dbname>?retryWrites=true&w=majority",
+        "jwtSecret": "mysecrettoken"
+    }
+
+2-- UPDATE user.js
+
+    const express = require('express');
+    const router = express.Router();
+    const {check, validationResult} = require('express-validator');
+    const User = require('../../models/User');
+    const gravatar = require('gravatar');
+    const bcrypt = require('bcryptjs');
+    const jwt = require('jsonwebtoken');
+    const config = require('config');
+
+    router.post('/',
+    [
+        check('name','Name is required').not().isEmpty(),
+        check('email','Enter vaild email').isEmail(),
+        check('password','Min password length is 6').isLength({min: 6})
+    ],
+    async (req,res)=>{
+        const errors = validationResult(req);
+        if(!errors.isEmpty())
+        {
+            return res.status(400).json({errors: errors.array()})
+        }
+
+        const {name, email, password} = req.body;
+
+        try{
+            let user = await User.findOne({email});
+            if(user){
+                return res.status(400).json({errors:[{msg: 'User already exits!'}]});
+            }
+
+            const avatar = gravatar.url(email,{
+                s:"200",
+                r:"pg",
+                d:"mm"
+            });
+        
+            user = new User({
+                name,
+                email,
+                avatar,
+                password
+            });
+        
+            const salt = await bcrypt.genSalt(10);
+            user.password = await bcrypt.hash(password, salt);
+
+            await user.save();
+
+            //return jsonwebtoken
+            const payload = {
+                user:{
+                    id: user.id
+                }
+            }
+
+            jwt.sign(payload, config.get('jwtSecret'), {expiresIn: 360000},
+            (err, token) => {
+                if(err) throw err;
+                res.json({token})
+            });
+
+        }catch(err){
+            console.log(err.message);
+            res.status(500).send('Server error');
+        }
+        
+    });
+
+    module.exports = router;
+
+3--
+CREATE FOLDER middleware
+middleware/auth.js
+
+    const jwt = require('jsonwebtoken');
+    const config = require('config');
+
+    module.exports = function(req,res,next){
+        //get token from header
+        const token = req.header('x-auth-token');
+
+        //if no token auth declined
+        if(!token){
+            return res.status(401).json({msg: 'No token, authorization denied'});
+        }
+
+        //verify token
+        try{
+            const decoded = jwt.verify(token, config.get('jwtSecret'));
+            req.user = decoded.user;
+            next();
+        }catch(err){
+            res.status(401).json({msg: 'Invalid Token!'});
+        }
+    };
+
+4--
+UPDATE routes/api/auth.js
+    const express = require('express');
+    const router = express.Router();
+    const auth = require('../../middleware/auth');
+    const User = require('../../models/User');
+
+    router.get('/', auth, async (req,res)=>{
+        try{
+            const user = await User.findById(req.user.id).select('-password');
+            res.json(user);
+        }catch(err){
+            console.log(err.msg);
+            res.status(500).send('Server error!');
+        }
+    });
+
+    module.exports = router;
+
+5--
+UPDATE routes/api/auth.js
+    const express = require('express');
+    const router = express.Router();
+    const auth = require('../../middleware/auth');
+    const User = require('../../models/User');
+    const jwt = require('jsonwebtoken');
+    const config = require('config');
+    const {check, validationResult} = require('express-validator');
+    const bcrypt = require('bcryptjs');
+
+
+    /*
+    --GET api/auth
+    --test route
+    --public
+    */
+
+    router.get('/', auth, async (req,res)=>{
+        try{
+            const user = await User.findById(req.user.id).select('-password');
+            res.json(user);
+        }catch(err){
+            console.log(err.msg);
+            res.status(500).send('Server error!');
+        }
+    });
+
+    /*
+    --POST api/auth
+    --authenticate usere and get data
+    --public
+    */
+
+    router.post('/',
+    [
+        check('email','Enter vaild email').isEmail(),
+        check('password','Password is required').exists()
+    ],
+    async (req,res)=>{
+        const errors = validationResult(req);
+        if(!errors.isEmpty())
+        {
+            return res.status(400).json({errors: errors.array()})
+        }
+
+        const {email, password} = req.body;
+
+        try{
+            let user = await User.findOne({email});
+            if(!user){
+                return res.status(400).json({errors:[{msg: 'Invalid credentials!'}]});
+            }
+
+            const isMatch = await bcrypt.compare(password, user.password);
+
+            if(!isMatch){
+                return res.status(400).json({errors: [{msg: 'Invalid Credentials!'}]});
+            }
+        
+            //return jsonwebtoken
+            const payload = {
+                user:{
+                    id: user.id
+                }
+            }
+
+            jwt.sign(payload, config.get('jwtSecret'), {expiresIn: 360000},
+            (err, token) => {
+                if(err) throw err;
+                res.json({token})
+            });
+
+        }catch(err){
+            console.log(err.message);
+            res.status(500).send('Server error');
+        }
+        
+    });
+
+    module.exports = router;
+
+--6
+    const mongoose = require('mongoose');
+
+    const ProfileSchema = new mongoose.Schema({
+        user: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'user'
+        },
+        company: {
+            type: String
+        },
+        website: {
+            type: String
+        },
+        location: {
+            type: String
+        },
+        status: {
+            type: String,
+            required: true
+        },
+        skills: {
+            type: [String],
+            required: true
+        },
+        bio:
+        {
+            type: String
+        },
+        githubusername:{
+            type: String
+        },
+        experience: [
+            {
+                title: {
+                    type: String,
+                    required: true
+                },
+                company: {
+                    type: String,
+                    required: true
+                },
+                location: {
+                    type: String
+                },
+                from: {
+                    type: Date,
+                    required: true
+                },
+                to: {
+                    type: Date
+                },
+                current: {
+                    type: Boolean,
+                    default: false
+                },
+                description: {
+                    type: String
+                }
+            }
+        ],
+        education: [
+            {
+                school: {
+                    type: String,
+                    required: true
+                },
+                degree: {
+                    type: String,
+                    required: true
+                },
+                fieldofstudy: {
+                    type: String,
+                    required: true
+                },
+                from: {
+                    type: Date,
+                    required: true
+                },
+                to: {
+                    type: Date
+                },
+                current: {
+                    type: Boolean,
+                    default: false
+                },
+                description: {
+                    type: String
+                }
+            }
+        ],
+        social: {
+            youtube: {
+                type: String
+            },
+            facebook: {
+                type: String
+            },
+            linkedin: {
+                type: String
+            },
+            twitter: {
+                type: String
+            },
+            instagram: {
+                type: String
+            }
+        },
+        date: {
+            type: Date,
+            default: Date.now
+        }
+    });
+
+    module.exports = Profile = mongoose.model('profile', ProfileSechema);
+
+--7 routes/api/profile.js
+    const express = require('express');
+    const router = express.Router();
+    const auth = require('../../middleware/auth');
+    const Profile = require('../../models/Profile');
+    const User = require('../../models/User');
+    const {check, validationResult} = require('express-validator');
+
+
+    /*
+    GET api/profile/me
+    get current user's profile 
+    private
+    */
+    router.get('/me', auth, async (req,res)=>{
+        try{
+            
+            const profile = await Profile.findOne({user: req.user.id}).populate('user', ['name', 'avatar']);
+            
+            if(!profile){
+                
+                return res.status(400).json({msg: 'There is no profile for this user'});
+            }
+            
+            res.json(profile);
+        }catch(err){
+            
+            console.log(err.msg);
+            res.status(500).send('Server error!');
+        }
+    });
+
+    /*
+    POST api/profile
+    create or update a user profile 
+    private
+    */
+    router.post('/', [auth, [
+        check('status','status is required').not().isEmpty(),
+        check('skills','skills is required').not().isEmpty()
+    ]], async (req,res)=>{
+        const errors = validationResult(req);
+        if(!errors.isEmpty()){
+            return res.status(400).json({errors: errors.array()});
+        }
+        
+        const {
+            company,
+            website,
+            location,
+            bio,
+            status,
+            githubusername,
+            skills,
+            facebook,
+            youtube,
+            twitter,
+            instagram,
+            linkedin
+        } = req.body;
+
+        //build profile object
+        const profileFields = {};
+        profileFields.user = req.user.id;
+        if (company) profileFields.company = company;
+        if (website) profileFields.website = website;
+        if (location) profileFields.location = location;
+        if (bio) profileFields.bio = bio;
+        if (status) profileFields.status = status;
+        if (githubusername) profileFields.githubusername = githubusername;
+
+        if(skills){
+            profileFields.skills = skills.split(',').map(skill => skill.trim());
+        }
+        //build social object
+        profileFields.social = {};
+        if (youtube) profileFields.social.youtube = youtube;
+        if (facebook) profileFields.social.facebook = facebook;
+        if (twitter) profileFields.social.twitter = twitter;
+        if (instagram) profileFields.social.instagram = instagram;
+        if (linkedin) profileFields.social.linkedin = linkedin;
+
+        try{
+            let profile = await Profile.findOne({user: req.user.id});
+            if(profile){
+                //update
+                profile = await Profile.findOneAndUpdate({user: req.user.id}, {$set: profileFields}, {new: true});
+                return res.json(profile);
+            }
+
+            //else create a new profile
+            profile = new Profile(profileFields);
+            await profile.save();
+            res.json(profile);
+
+        }catch(err){
+            console.log(err.msg);
+            res.status(500).send('Server error');
+        }
+    })
+
+    module.exports = router;
+
+--8 TO GET ALL PROFILES & GET PROFILE BY USER_ID
+UPDATE routes/api/profile.js
+    const express = require('express');
+    const router = express.Router();
+    const auth = require('../../middleware/auth');
+    const Profile = require('../../models/Profile');
+    const User = require('../../models/User');
+    const {check, validationResult} = require('express-validator');
+
+
+    /*
+    GET api/profile/me
+    get current user's profile 
+    private
+    */
+    router.get('/me', auth, async (req,res)=>{
+        try{
+            
+            const profile = await Profile.findOne({user: req.user.id}).populate('user', ['name', 'avatar']);
+            
+            if(!profile){
+                
+                return res.status(400).json({msg: 'There is no profile for this user'});
+            }
+            
+            res.json(profile);
+        }catch(err){
+            
+            console.log(err.msg);
+            res.status(500).send('Server error!');
+        }
+    });
+
+    /*
+    POST api/profile
+    create or update a user profile 
+    private
+    */
+    router.post('/', [auth, [
+        check('status','status is required').not().isEmpty(),
+        check('skills','skills is required').not().isEmpty()
+    ]], async (req,res)=>{
+        const errors = validationResult(req);
+        if(!errors.isEmpty()){
+            return res.status(400).json({errors: errors.array()});
+        }
+        
+        const {
+            company,
+            website,
+            location,
+            bio,
+            status,
+            githubusername,
+            skills,
+            facebook,
+            youtube,
+            twitter,
+            instagram,
+            linkedin
+        } = req.body;
+
+        //build profile object
+        const profileFields = {};
+        profileFields.user = req.user.id;
+        if (company) profileFields.company = company;
+        if (website) profileFields.website = website;
+        if (location) profileFields.location = location;
+        if (bio) profileFields.bio = bio;
+        if (status) profileFields.status = status;
+        if (githubusername) profileFields.githubusername = githubusername;
+
+        if(skills){
+            profileFields.skills = skills.split(',').map(skill => skill.trim());
+        }
+        //build social object
+        profileFields.social = {};
+        if (youtube) profileFields.social.youtube = youtube;
+        if (facebook) profileFields.social.facebook = facebook;
+        if (twitter) profileFields.social.twitter = twitter;
+        if (instagram) profileFields.social.instagram = instagram;
+        if (linkedin) profileFields.social.linkedin = linkedin;
+
+        try{
+            let profile = await Profile.findOne({user: req.user.id});
+            if(profile){
+                //update
+                profile = await Profile.findOneAndUpdate({user: req.user.id}, {$set: profileFields}, {new: true});
+                return res.json(profile);
+            }
+
+            //else create a new profile
+            profile = new Profile(profileFields);
+            await profile.save();
+            res.json(profile);
+
+        }catch(err){
+            console.log(err.msg);
+            res.status(500).send('Server error');
+        }
+    });
+
+    /*
+    GET api/profile
+    get all profiles 
+    public
+    */
+
+    router.get('/', async(req, res)=>{
+        try{
+            const profiles = await Profile.find().populate('user', ['name', 'avatar']);
+            res.json(profiles);
+        }catch(err){
+            console.log(err.msg);
+            res.status(500).send('Server Error');
+        }
+    });
+
+    /*
+    GET api/profile/user/:user_id
+    get profile by user_id
+    public
+    */
+
+    router.get('/user/:user_id', async(req, res)=>{
+        try{
+            const profile = await Profile.findOne({ user: req.params.user_id}).populate('user', ['name', 'avatar']);
+            if(!profile){
+                return res.status(400).json({msg: 'Profile not found'})
+            }
+            res.json(profile);
+        }catch(err){
+            if(err.kind == 'ObjectId'){
+                return res.status(400).json({msg: 'PROFILE NOT FOUND'})
+            }
+            else{
+            console.log(err.msg);
+            res.status(500).send('Server Error');
+            }
+        }
+    });
+
+    module.exports = router;
+
+9-- DELETE USER, PROFILE, POSTS
+APPEND this code snippet to routes/api/profile.js
+    /*
+    DELETE api/profile
+    DELETE profile, user, posts
+    private
+    */
+
+    router.delete('/', auth, async(req, res)=>{
+        try{
+            //todo - remove user's posts
+            //Remove Profile
+            await Profile.findOneAndRemove({user: req.user.id});
+            //Remove u=User
+            await User.findOneAndRemove({_id: req.user.id});
+            res.json({msg: 'User Removed'})
+        }catch(err){
+            console.log(err.msg);
+            res.status(500).send('Server Error');
+        }
+    });
+
+10-- ADD EXPERIENCE TO PROFILE
+APPEND this code snippet to routes/api/profile.js
+
+    /*
+    PUT api/profile/experience
+    add profile experience
+    private
+    */
+    router.put('/experience', [ auth, [
+        check('title','Title is required').not().isEmpty(),
+        check('company','Company is required').not().isEmpty(),
+        check('from','From date is required').not().isEmpty()
+    ] ], 
+    async (req, res)=> {
+        const errors = validationResult(req);
+        if(!errors.isEmpty()){
+            return res.status(400).json({errors: errors.array()});
+        }
+
+        const{
+            title,
+            company,
+            location,
+            from,
+            to,
+            current,
+            description
+        } = req.body;
+
+        const newExp = {
+            title,
+            company,
+            location,
+            from,
+            to,
+            current,
+            description
+        }
+
+        try{
+            const profile = await Profile.findOne({user: req.user.id});
+            //push will push at the end of the array
+            //unshift will push to the beginning of the array
+
+            profile.experience.unshift(newExp);
+            await profile.save();
+
+            res.json(profile);
+        }catch(err){
+            console.error(err.message);
+            res.status(500).send('Server error');
+        }
+    });
+
+11-- DELETE EXPERIENCE FROM PROFILE
+APPEND this code snippet to routes/api/profile.js
+
+    /*
+    DELETE experience by exp_id
+    private
+    */
+    router.delete('/experience/:exp_id', auth, async (req, res)=>{
+        try {
+            const profile = await Profile.findOne({user: req.user.id});
+
+            //get remove experience
+            const removeIndex = profile.experience.map(item => item.id).indexOf(req.params.exp_id);
+
+            profile.experience.splice(removeIndex, 1);
+            await profile.save();
+
+            res.json(profile);
+
+        } catch (error) {
+            console.error(error.message);
+            return res.status(500).send('Server error');
+        }
+    })
+
+12a-- ADD EDUCATION TO PROFILE
+12b-- DELETE EXPERIENCE FROM PROFILE
+
+    /*
+    PUT api/profile/education
+    add profile education
+    private
+    */
+    router.put('/education', [ auth, [
+        check('school','School is required').not().isEmpty(),
+        check('degree','Degree is required').not().isEmpty(),
+        check('fieldofstudy','Field of study is required').not().isEmpty(),
+        check('from','From is required').not().isEmpty()
+    ] ], 
+    async (req, res)=> {
+        const errors = validationResult(req);
+        if(!errors.isEmpty()){
+            return res.status(400).json({errors: errors.array()});
+        }
+
+        const{
+            school,
+            degree,
+            fieldofstudy,
+            from,
+            to,
+            current,
+            description
+        } = req.body;
+
+        const newEdu = {
+            school,
+            degree,
+            fieldofstudy,
+            from,
+            to,
+            current,
+            description
+        }
+
+        try{
+            const profile = await Profile.findOne({user: req.user.id});
+            //push will push at the end of the array
+            //unshift will push to the beginning of the array
+
+            profile.education.unshift(newEdu);
+            await profile.save();
+
+            res.json(profile);
+        }catch(err){
+            console.error(err.message);
+            res.status(500).send('Server error');
+        }
+    });
+
+    /*
+    DELETE education by edu_id
+    private
+    */
+    router.delete('/education/:edu_id', auth, async (req, res)=>{
+        try {
+            const profile = await Profile.findOne({user: req.user.id});
+
+            //get remove experience
+            const removeIndex = profile.education.map(item => item.id).indexOf(req.params.edu_id);
+
+            profile.education.splice(removeIndex, 1);
+            await profile.save();
+
+            res.json(profile);
+
+        } catch (error) {
+            console.error(error.message);
+            return res.status(500).send('Server error');
+        }
+    })
+
+13-- GITHUB API
+
+    //UPDATE routes/api/profile.js
+
+    //INCLUDE
+    const request = require('request');
+    const config = require('config');
+
+    //APPEND
+    /*
+    GET routes/api/profile/github/:username
+    get users github repos
+    Public
+    */
+
+router.get('/github/:username', (req, res)=>{
+    try {
+        
+        const options = {
+            uri : `https://api.github.com/users/${req.params.username}/repos?per_page=5&sort=created:asc&client_id=${config.get('githubClientId')}&client_secret=${config.get('githubSecret')}`,
+            method : 'GET',
+            headers: {'user-agent': 'node.js'}
+        }
+
+        request(options, (error, response, body) => {
+            if(error) console.error(error.message);
+    
+            if(response.statusCode !== 200) res.status(404).json({msg: 'No github profile for user'});
+    
+            res.json(JSON.parse(body));
+        })
+        
+    } catch (error) {
+        console.error(error.message);
+        res.status(500).send('Server error');
+    }
+})
+
+
+14-- Creating the Post model
+Create models/Post.js
+
+    const mongoose = require('mongoose');
+    const Schema = mongoose.Schema;
+
+    const PostSchema = new mongoose.Schema({
+        user: {
+            type: Schema.Types.ObjectId,
+            ref: 'users'
+        },
+        text:{
+            type: String,
+            required: true
+        },
+        name:{
+            type: String
+        },
+        avatar:{
+            type: String
+        },
+        likes:[
+            {
+                user:{
+                    type: Schema.Types.ObjectId,
+                    ref: 'users'
+                }
+            }
+        ],
+        comments:[
+            {
+                user:{
+                    type: Schema.Types.ObjectId,
+                    ref: 'users'
+                },
+                text:{
+                    type: String,
+                    required: true
+                },
+                name:{
+                    type: String
+                },
+                avatar:{
+                    type: String
+                },
+                date:{
+                    type: Date,
+                    default: Date.now
+                }
+            }
+        ],
+        date:{
+            type: Date,
+            default: Date.now
+        }
+    })
+
+    module.exports = Post = mongoose.model('post', PostSchema);
+
+15-- Modify routes/api/posts.js
+
+        const express = require('express');
+        const router = express.Router();
+        const auth = require('../../middleware/auth');
+        const {check, validationResult} = require('express-validator');
+
+        const Profile = require('../../models/Profile');
+        const User = require('../../models/User');
+        const Post = require('../../models/Post');
+        /*
+        POST api/posts
+        Create a post
+        Private
+        */
+        router.post('/', [auth, [
+            check('text', 'Text is require').not().isEmpty()
+        ]] ,
+        async (req,res)=>{
+            const errors = validationResult(req);
+            if(!errors.isEmpty()){
+                return res.send(400).json({ errors: errors.array() })
+            }
+
+            try {
+                const user = await User.findById(req.user.id).select('-password');
+
+                const postFields = {
+                    text: req.body.text,         
+                    name: user.name,
+                    avatar: user.avatar,
+                    user: req.user.id
+                }
+                if(req.body.img)
+                    postFields.img = req.body.img;
+
+                const newPost = new Post(postFields);
+                const post = await newPost.save();
+
+                res.json(post);
+            } catch (err) {
+                console.error(err.message);
+                res.status(500).send('Server error');
+            }
+        });
+
+
+        /*
+        GET api/posts
+        All posts
+        Private
+        */
+        router.get('/',auth, async(req,res)=>{
+            try {
+                const posts = await Post.find().sort({date:-1});
+                res.json(posts);
+            } catch (err) {
+                console.error(err.message);
+                res.status(500).send('Server error');
+            }
+        })
+
+        /*
+        GET api/posts/<id>
+        post by id
+        Private
+        */
+
+        router.get('/:id',auth, async(req,res)=>{
+            try {
+                const post = await Post.findById(req.params.id);
+                if(!post){
+                    return res.status(404).json({msg: 'Post not found!'});
+                }
+                res.json(post);
+            } catch (err) {
+                console.error(err.message);
+                if(err.kind === 'ObjectId'){
+                    return res.status(404).json({msg: 'Post not found!'});
+                }
+                res.status(500).send('Server error');
+            }
+        })
+
+        /*
+        DELETE api/post/<id>
+        Private
+        */
+        router.delete('/:id',auth, async(req,res)=>{
+            try {
+                const post = await Post.findById(req.params.id);
+                if(!post){
+                    return res.status(404).json({msg: 'Post not found!'});
+                }
+
+                if(post.user.toString() !== req.user.id){
+                    return res.status(401).json({msg: 'User not authorized'});
+                }
+                await post.remove();
+                res.json({msg:'Post removed'});
+            } catch (err) {
+                console.error(err.message);
+                if(err.kind === 'ObjectId'){
+                    return res.status(404).json({msg: 'Post not found!'});
+                }
+                res.status(500).send('Server error');
+            }
+        })
+
+        /*
+        PUT api/posts/like/<id>
+        like post by id
+        Private
+        */
+
+        router.put('/like/:id',auth, async(req,res)=>{
+            try {
+                const post = await Post.findById(req.params.id);
+                //check if user has already liked this post
+                if(post.likes.filter(like=>like.user.toString() === req.user.id).length>0){
+                    return res.status(400).json({msg: 'Already liked'});
+                }
+                post.likes.unshift({user: req.user.id});
+                await post.save();
+                res.json(post.likes);
+            } catch (err) {
+                console.error(err.message);
+                res.status(500).send('Server error');
+            }
+        })
+
+        /*
+        PUT api/posts/unlike/<id>
+        like post by id
+        Private
+        */
+
+        router.put('/unlike/:id',auth, async(req,res)=>{
+            try {
+                const post = await Post.findById(req.params.id);
+                //check if user has already liked this post
+                if(post.likes.filter(like=>like.user.toString() === req.user.id).length===0){
+                    return res.status(400).json({msg: 'Post not liked yet'});
+                }
+
+                const removeIndex = post.likes.map(like => like.user.toString()).indexOf(req.user.id);
+
+                post.likes.splice(removeIndex,1);
+                await post.save();
+                res.json(post.likes);
+            } catch (err) {
+                console.error(err.message);
+                res.status(500).send('Server error');
+            }
+        })
+
+        /*
+        ---Comments---
+        POST api/posts/comment/:id
+        Private
+        */
+        router.post('/comment/:id', [auth, [
+            check('text', 'Text is require').not().isEmpty()
+        ]] ,
+        async (req,res)=>{
+            const errors = validationResult(req);
+            if(!errors.isEmpty()){
+                return res.send(400).json({ errors: errors.array() })
+            }
+
+            try {
+                const user = await User.findById(req.user.id).select('-password');
+                const post = await Post.findById(req.params.id);
+
+                const newComment = {
+                    text: req.body.text,         
+                    name: user.name,
+                    avatar: user.avatar,
+                    user: req.user.id
+                }
+
+                post.comments.unshift(newComment);
+                await post.save();
+
+                res.json(post.comments);
+            } catch (err) {
+                console.error(err.message);
+                res.status(500).send('Server error');
+            }
+        });
+
+        /*
+        ---delete Comment---
+        DELETE api/posts/comment/:id/:comment_id
+        Private
+        */
+        router.delete('/comment/:id/:comment_id', auth, async (req,res)=>{
+
+            try {
+                const post = await Post.findById(req.params.id);
+
+                const comment = post.comments.find(comment => comment.id === req.params.comment_id);
+                if(!comment){
+                    return res.status(404).json({msg:'Comment does not exist'});
+                }
+                
+                if(comment.user.toString() !== req.user.id){
+                    return res.status(401).json({msg: 'User not authorised'});
+                }
+
+                const removeIndex = post.comments.map(comment => comment._id.toString()).indexOf(req.params.comment_id);
+
+                post.comments.splice(removeIndex,1);
+                await post.save();
+
+                res.json(post.comments);
+            } catch (err) {
+                console.error(err.message);
+                res.status(500).send('Server error');
+            }
+        });
+
+        module.exports = router;
+
+---------------------------------------------------------------------------------
+                                PART THREE(a) - FRONTEND
+---------------------------------------------------------------------------------
+3-- Edit App.js
+
+    import React, { Fragment } from 'react';
+    import { BrowserRouter as Router, Route, Switch } from 'react-router-dom';
+    import Navbar from './components/layout/Navbar';
+    import Landing from './components/layout/Landing';
+    import './App.css';
+
+    const App = () => 
+    <Router>
+        <Fragment>
+        <Navbar />
+        <Route exact path='/' component={ Landing } />
+        </Fragment>
+    </Router>
+    export default App;
+
+2(a) -- Navbar.js
+    import React from 'react'
+
+    export const Navbar = () => {
+        return (
+            <nav className="navbar bg-dark">
+            <h1>
+                <a href="index.html"><i className="fas fa-code"></i> DevConnector</a>
+            </h1>
+            <ul>
+                <li><a href="profiles.html">Developers</a></li>
+                <li><a href="register.html">Register</a></li>
+                <li><a href="login.html">Login</a></li>
+            </ul>
+            </nav>
+        )
+    }
+    export default Navbar;
+
+2(b) -- Landing.js
+    /*
+    ES7 React/Redux snippets
+    racfe (enter)
+    */
+    import React from 'react'
+
+    export const Landing = () => {
+        return (
+            <section className="landing">
+            <div className="dark-overlay">
+                <div className="landing-inner">
+                <h1 className="x-large">Developer Connector</h1>
+                <p className="lead">
+                    Create a developer profile/portfolio, share posts and get help from
+                    other developers
+                </p>
+                <div className="buttons">
+                    <a href="register.html" className="btn btn-primary">Sign Up</a>
+                    <a href="login.html" className="btn btn-light">Login</a>
+                </div>
+                </div>
+            </div>
+            </section>
+        )
+    }
+    export default Landing;
+
+4(a)--Create client/src/components/auth/Login.js
+    import React from 'react'
+
+    const Login = () => {
+        return (
+            <div>
+                Login
+            </div>
+        )
+    }
+
+    export default Login
+
+4(b)  Create client/src/components/auth/Register.js
+
+    import React from 'react'
+    const Register = () => {
+        return (
+            <div>
+                Register
+            </div>
+        )
+    }
+
+    export default Register
+
+4(c)  Edit Navbar.js, Landing.js
+
+--Navbar.js
+    import React from 'react';
+    import { Link } from 'react-router-dom';
+
+    export const Navbar = () => {
+        return (
+            <nav className="navbar bg-dark">
+            <h1>
+                <Link to="/"><i className="fas fa-code"></i> DevConnector</Link>
+            </h1>
+            <ul>
+                <li><Link to="/">Developers</Link></li>
+                <li><Link to="/register">Register</Link></li>
+                <li><Link to="/login">Login</Link></li>
+            </ul>
+            </nav>
+        )
+    }
+    export default Navbar;
+
+--Landing.js
+
+    import React from 'react';
+    import { Link } from 'react-router-dom';
+
+    export const Landing = () => {
+        return (
+            <section className="landing">
+            <div className="dark-overlay">
+                <div className="landing-inner">
+                <h1 className="x-large">Developer Connector</h1>
+                <p className="lead">
+                    Create a developer profile/portfolio, share posts and get help from
+                    other developers
+                </p>
+                <div className="buttons">
+                    <Link to="/register" className="btn btn-primary">Sign Up</Link>
+                    <Link to="/login" className="btn btn-light">Login</Link>
+                </div>
+                </div>
+            </div>
+            </section>
+        )
+    }
+    export default Landing;
+
+5-- Edit Register.js
+    import React, { Fragment, useState } from 'react';
+    import axios from 'axios';
+
+    const Register = () => {
+        const [ formData, setFormData ] = useState({
+            name: '',
+            email: '',
+            password: '',
+            password2: ''
+        });
+
+        const { name, email, password, password2 } = formData;
+
+        const onChange = e => setFormData({...formData, [e.target.name]: e.target.value });
+
+        const onSubmit = async e => {
+            e.preventDefault();
+            if(password !== password2)
+                console.log('Passwords do not match')
+            else
+                {
+                    const newUser = {
+                        name,
+                        email,
+                        password
+                    }
+
+                    try {
+                        const config = {
+                            headers: {
+                                'Content-Type': 'application/json'
+                            }
+                        }
+
+                        const body =JSON.stringify(newUser);
+                        const res = await axios.post('/api/users', body, config);
+                        console.log(res.data);
+                    } catch (err) {
+                        console.error(err.response.data);
+                    }
+                }
+        }
+
+        return (
+            <Fragment>
+                <h1 className="large text-primary">Sign Up</h1>
+                <p className="lead"><i className="fas fa-user"></i> Create Your Account</p>
+
+                <form className="form" onSubmit={ e => onSubmit(e) }>
+                    <div className="form-group">
+                    <input 
+                        type="text" 
+                        placeholder="Name" 
+                        name="name" value={ name } 
+                        onChange={ e => onChange(e) } 
+                        required 
+                    />
+                    </div>
+
+                    <div className="form-group">
+                    <input 
+                        type="email" 
+                        placeholder="Email Address" 
+                        name="email" 
+                        value={ email } 
+                        onChange={ e => onChange(e) } 
+                        required
+                    />
+                    <small className="form-text"
+                        >This site uses Gravatar so if you want a profile image, use a
+                        Gravatar email</small
+                    >
+                    </div>
+
+                    <div className="form-group">
+                    <input
+                        type="password"
+                        placeholder="Password"
+                        name="password"
+                        value={ password } 
+                        onChange={ e => onChange(e) }
+                        minLength="6"
+                    />
+                    </div>
+
+                    <div className="form-group">
+                    <input
+                        type="password"
+                        placeholder="Confirm Password"
+                        name="password2"
+                        value={ password2 } 
+                        onChange={ e => onChange(e) }
+                        minLength="6"
+                    />
+                    </div>
+
+                    <input type="submit" className="btn btn-primary" value="Register" />
+                </form>
+                <p className="my-1">
+                    Already have an account? <a href="login.html">Sign In</a>
+                </p>
+            </Fragment>
+        )
+    }
+
+    export default Register;
+
+---------------------------------------------------------------------------------
+                        PART THREE(b) - FRONTEND (cont) REDUX
+---------------------------------------------------------------------------------
+1-- create file client/src/store.js
+
+    import { createStore, applyMiddleware } from 'redux';
+    import { composeWithDevTools } from 'redux-devtools-extension';
+    import thunk from 'redux-thunk';
+    import rootReducer from './reducers';
+
+    const initialState = {};
+
+    const middleware = [ thunk ];
+
+    const store = createStore(rootReducer, initialState, composeWithDevTools(applyMiddleware(...middleware)));
+
+    export default store;
+
+2-- Edit App.js
+
+    import React, { Fragment } from 'react';
+    import { BrowserRouter as Router, Route, Switch } from 'react-router-dom';
+    import Register from './components/auth/Register';
+    import Login from './components/auth/Login';
+    import Navbar from './components/layout/Navbar';
+    import Landing from './components/layout/Landing';
+    //Provider combines redux with react
+    import { Provider } from 'react-redux';
+    import store from './store';
+    import './App.css';
+
+    const App = () => 
+    <Provider store={ store }>
+        <Router>
+        <Fragment>
+        <Navbar />
+        <Route exact path='/' component={ Landing } />
+        <section className="container">
+            <Switch>
+            <Route exact path = '/register' component = { Register } />
+            <Route exact path = '/login' component = { Login } />
+            </Switch>
+        </section>
+        </Fragment>
+    </Router>
+    </Provider>
+    export default App;
+
+3-- reducers/alert.js
+
+    import { SET_ALERT, REMOVE_ALERT } from '../actions/types';
+
+    const initialState = [];
+
+    export default function(state = initialState, action){
+        const { type, payload } = action;
+        switch(type){
+            //return a state (note: state is immutable therfore we copy existing state and append to it) it is the array we se in redux dev tools
+            case SET_ALERT:
+                return [...state, payload];
+            case REMOVE_ALERT:
+                return state.filter(alert=>alert.id !== payload);
+            default:
+                return state;
+        }
+    }
+
+4-- edit reducers/index.js
+
+    import { combineReducers } from 'redux';
+    import alert from './alert';
+
+    export default combineReducers({
+        alert
+    });
+
+5-- create file src/actions/types.js
+    export const SET_ALERT = 'SET_ALERT';
+    export const REMOVE_ALERT = 'REMOVE_ALERT';
+
+6-- create file src/actions/alert.js
+
+    import { v4 as uuidv4 } from 'uuid';
+    import { SET_ALERT, REMOVE_ALERT } from './types';
+
+    export const setAlert = (msg, alertType, timeout) => dispatch => {
+        const id = uuidv4();
+        dispatch({
+            type: SET_ALERT,
+            payload: {msg, alertType, id}
+        });
+
+        setTimeout(()=> dispatch({type: REMOVE_ALERT, payload: id}), timeout)
+    }
+
+7-- edit Register.js
+
+    import React, { Fragment, useState } from 'react';
+    import { Link } from 'react-router-dom';
+    import { connect } from 'react-redux';
+    /*connect is used by the component that wants to interact with redux say calling actions or getting state */
+    import { setAlert } from '../../actions/alert';
+    //impt
+    import PropTypes from 'prop-types'
+
+    //const Register = (props) =>
+    const Register = ({ setAlert }) => {
+        const [ formData, setFormData ] = useState({
+            name: '',
+            email: '',
+            password: '',
+            password2: ''
+        });
+
+        const { name, email, password, password2 } = formData;
+
+        const onChange = e => setFormData({...formData, [e.target.name]: e.target.value });
+
+        const onSubmit = async e => {
+            e.preventDefault();
+            //can be written as props.setAlert('Passwords do not match', 'danger')
+            if(password !== password2)
+                setAlert('Passwords do not match', 'danger', 3000)
+            else
+            console.log('Success!')
+        }
+
+        return (
+            <Fragment>
+                <h1 className="large text-primary">Sign Up</h1>
+                <p className="lead"><i className="fas fa-user"></i> Create Your Account</p>
+
+                <form className="form" onSubmit={ e => onSubmit(e) }>
+                    <div className="form-group">
+                    <input 
+                        type="text" 
+                        placeholder="Name" 
+                        name="name" value={ name } 
+                        onChange={ e => onChange(e) } 
+                        required 
+                    />
+                    </div>
+
+                    <div className="form-group">
+                    <input 
+                        type="email" 
+                        placeholder="Email Address" 
+                        name="email" 
+                        value={ email } 
+                        onChange={ e => onChange(e) } 
+                        required
+                    />
+                    <small className="form-text"
+                        >This site uses Gravatar so if you want a profile image, use a
+                        Gravatar email</small
+                    >
+                    </div>
+
+                    <div className="form-group">
+                    <input
+                        type="password"
+                        placeholder="Password"
+                        name="password"
+                        value={ password } 
+                        onChange={ e => onChange(e) }
+                        minLength="6"
+                    />
+                    </div>
+
+                    <div className="form-group">
+                    <input
+                        type="password"
+                        placeholder="Confirm Password"
+                        name="password2"
+                        value={ password2 } 
+                        onChange={ e => onChange(e) }
+                        minLength="6"
+                    />
+                    </div>
+
+                    <input type="submit" className="btn btn-primary" value="Register" />
+                </form>
+                <p className="my-1">
+                    Already have an account? <Link to="/login">Sign In</Link>
+                </p>
+            </Fragment>
+        )
+    }
+
+    Register.propTypes = {
+        setAlert: PropTypes.func.isRequired
+        //ptrf
+    }
+
+    export default connect(null, { setAlert })(Register);
+    /*connect(state, {actions}) i.e passing state and object of alerts
+    You can now access prop.setAlert
+    */
+
+8-- create client/src/components/layout/Alert.js
+
+    //racfp
+    import React from 'react'
+    import PropTypes from 'prop-types'
+    import { connect } from 'react-redux';
+    const Alert = ({ alerts }) => alerts != null && alerts.length > 0 && alerts.map(alert => (
+        //jsx - Javascript XML used to write HTML in React
+        <div key={alert.id} className={`alert alert-${alert.alertType}`}>
+            { alert.msg }
+        </div>
+    ));
+
+    Alert.propTypes = {
+        //ptar
+        alerts: PropTypes.array.isRequired
+    }
+    //mapping a redux state to a prop
+    //here, the array of alerts
+    const mapStateToProps = state => ({
+        //refer root reducers i.e. index.js
+        alerts: state.alert
+    });
+
+    export default connect(mapStateToProps)(Alert);
+
+9-- Edit App.js
+
+    import React, { Fragment } from 'react';
+    import { BrowserRouter as Router, Route, Switch } from 'react-router-dom';
+    import Register from './components/auth/Register';
+    import Login from './components/auth/Login';
+    import Navbar from './components/layout/Navbar';
+    import Landing from './components/layout/Landing';
+    import Alert from './components/layout/Alert';
+    //Provider combines redux with react
+    import { Provider } from 'react-redux';
+    import store from './store';
+    import './App.css';
+
+    const App = () => 
+    <Provider store={ store }>
+        <Router>
+        <Fragment>
+        <Navbar />
+        <Route exact path='/' component={ Landing } />
+        <section className="container">
+            <Alert/>
+            <Switch>
+            <Route exact path = '/register' component = { Register } />
+            <Route exact path = '/login' component = { Login } />
+            </Switch>
+        </section>
+        </Fragment>
+    </Router>
+    </Provider>
+    export default App;
+
+---------------------------------------------------------------------------------
+                PART THREE(c) - FRONTEND (cont) USER AUTHENTICATION
+---------------------------------------------------------------------------------
+video 1
+--1 create file reducers/auth.js
+    import { REGISTER_SUCCESS, REGISTER_FAIL } from '../actions/types';
+
+    const initialState = {
+        token: localStorage.getItem('token'),
+        isAuthenticated: null,
+        loading: true,
+        user: null
+    }
+
+    export default function(state = initialState, action){
+        const {type, payload} = action;
+        
+        switch(type){
+            case REGISTER_SUCCESS:
+                localStorage.setItem('token', payload.token);
+                return {...state, ...payload, isAuthenticated: true, loading: false};
+            
+            case REGISTER_FAIL:
+                localStorage.removeItem('token');
+                return {...state, token: null, isAuthenticated: false, loading: false};
+
+            default:
+                return state;
+        }
+    }
+
+--2 edit actions/types.js
+
+    export const SET_ALERT = 'SET_ALERT';
+    export const REMOVE_ALERT = 'REMOVE_ALERT';
+    export const REGISTER_SUCCESS = 'REGISTER_SUCCESS';
+    export const REGISTER_FAIL = 'REGISTER_FAIL';
+
+--3 create actions/auth.js
+
+    import axios from 'axios';
+    import { setAlert } from './alert';
+    import {REGISTER_SUCCESS, REGISTER_FAIL} from './types';
+
+    //register user
+    export const register = ({ name, email, password }) => async dispatch => {
+        const config = {
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        }
+
+        const body = JSON.stringify({ name, email, password });
+
+        try {
+            const res = await axios.post('/api/users', body, config);
+
+            dispatch({
+                type: REGISTER_SUCCESS,
+                payload: res.data
+                //res.data is the token
+            });
+        } catch (err) {
+            const errors = err.response.data.errors;
+            if(errors){
+                errors.forEach(error => dispatch(setAlert(error.msg, 'danger',3000)));
+            }
+            dispatch({
+                type: REGISTER_FAIL
+            });
+        }
+    }
+
+--4 edit Register.js
+
+    import React, { Fragment, useState } from 'react';
+    import { Link } from 'react-router-dom';
+    import { connect } from 'react-redux';
+    /*connect is used by the component that wants to interact with redux say calling actions or getting state */
+    import { register } from '../../actions/auth';
+    import { setAlert } from '../../actions/alert';
+    //impt
+    import PropTypes from 'prop-types'
+
+    //const Register = (props) =>
+    const Register = ({ setAlert, register }) => {
+        const [ formData, setFormData ] = useState({
+            name: '',
+            email: '',
+            password: '',
+            password2: ''
+        });
+
+        const { name, email, password, password2 } = formData;
+
+        const onChange = e => setFormData({...formData, [e.target.name]: e.target.value });
+
+        const onSubmit = async e => {
+            e.preventDefault();
+            //can be written as props.setAlert('Passwords do not match', 'danger')
+            if(password !== password2)
+                setAlert('Passwords do not match', 'danger', 3000)
+            else
+            register({name, email, password});
+        }
+
+        return (
+            <Fragment>
+                <h1 className="large text-primary">Sign Up</h1>
+                <p className="lead"><i className="fas fa-user"></i> Create Your Account</p>
+
+                <form className="form" onSubmit={ e => onSubmit(e) }>
+                    <div className="form-group">
+                    <input 
+                        type="text" 
+                        placeholder="Name" 
+                        name="name" value={ name } 
+                        onChange={ e => onChange(e) } 
+                        //required 
+                    />
+                    </div>
+
+                    <div className="form-group">
+                    <input 
+                        type="email" 
+                        placeholder="Email Address" 
+                        name="email" 
+                        value={ email } 
+                        onChange={ e => onChange(e) } 
+                        //required
+                    />
+                    <small className="form-text"
+                        >This site uses Gravatar so if you want a profile image, use a
+                        Gravatar email</small
+                    >
+                    </div>
+
+                    <div className="form-group">
+                    <input
+                        type="password"
+                        placeholder="Password"
+                        name="password"
+                        value={ password } 
+                        onChange={ e => onChange(e) }
+                        //minLength="6"
+                    />
+                    </div>
+
+                    <div className="form-group">
+                    <input
+                        type="password"
+                        placeholder="Confirm Password"
+                        name="password2"
+                        value={ password2 } 
+                        onChange={ e => onChange(e) }
+                        //minLength="6"
+                    />
+                    </div>
+
+                    <input type="submit" className="btn btn-primary" value="Register" />
+                </form>
+                <p className="my-1">
+                    Already have an account? <Link to="/login">Sign In</Link>
+                </p>
+            </Fragment>
+        )
+    }
+
+    Register.propTypes = {
+        setAlert: PropTypes.func.isRequired,
+        register: PropTypes.func.isRequired
+        //ptrf
+    }
+
+    export default connect(null, { setAlert, register })(Register);
+    /*connect(state, {actions}) i.e passing state and object of alerts
+    You can now access prop.setAlert
+    */
+
+--5 edit reducers/index.js
+
+    import { combineReducers } from 'redux';
+    import alert from './alert';
+    import auth from './auth';
+
+    export default combineReducers({
+        alert,
+        auth
+    });
+
+video 2,3 login
+--1 edit actions/types.js
+    export const SET_ALERT = 'SET_ALERT';
+    export const REMOVE_ALERT = 'REMOVE_ALERT';
+    export const REGISTER_SUCCESS = 'REGISTER_SUCCESS';
+    export const REGISTER_FAIL = 'REGISTER_FAIL';
+    export const USER_LOADED = 'USER_LOADED';
+    export const AUTH_ERROR = 'AUTH_ERROR';
+    export const LOGIN_SUCCESS = 'LOGIN_SUCCESS';
+    export const LOGIN_FAIL = 'LOGIN_FAIL';
+
+--2 edit actions/auth.js
+    import axios from 'axios';
+    import { setAlert } from './alert';
+    import {REGISTER_SUCCESS, REGISTER_FAIL, USER_LOADED, AUTH_ERROR, LOGIN_SUCCESS, LOGIN_FAIL } from './types';
+    import setAuthToken from '../utils/setAuthToken';
+    //load user
+    export const loadUser = () => async dispatch => {
+        if(localStorage.token)
+            setAuthToken(localStorage.token)
+        
+        try {
+            const res = await axios.get('/api/auth');
+
+            dispatch({
+                type: USER_LOADED,
+                payload: res.data
+            });
+
+        } catch (err) {
+            dispatch({
+                type: AUTH_ERROR
+            })
+        }
+    }
+
+    //register user
+    export const register = ({ name, email, password }) => async dispatch => {
+        const config = {
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        }
+
+        const body = JSON.stringify({ name, email, password });
+
+        try {
+            const res = await axios.post('/api/users', body, config);
+
+            dispatch({
+                type: REGISTER_SUCCESS,
+                payload: res.data
+                //res.data is the token
+            });
+            dispatch(loadUser());
+        } catch (err) {
+            const errors = err.response.data.errors;
+            if(errors){
+                errors.forEach(error => dispatch(setAlert(error.msg, 'danger',3000)));
+            }
+            dispatch({
+                type: REGISTER_FAIL
+            });
+        }
+    }
+
+    //Login User
+
+    export const login = ( email, password ) => async dispatch => {
+        const config = {
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        }
+
+        const body = JSON.stringify({ email, password });
+
+        try {
+            const res = await axios.post('/api/auth', body, config);
+
+            dispatch({
+                type: LOGIN_SUCCESS,
+                payload: res.data
+                //res.data is the token
+            });
+            dispatch(loadUser());
+        } catch (err) {
+            const errors = err.response.data.errors;
+            if(errors){
+                errors.forEach(error => dispatch(setAlert(error.msg, 'danger',3000)));
+            }
+            dispatch({
+                type: LOGIN_FAIL
+            });
+        }
+    }
+
+--3 create file src/utils/setAuthToken.js
+    import axios from 'axios';
+
+    const setAuthToken = token => {
+        if(token)
+            axios.defaults.headers.common['x-auth-token'] = token
+        else
+            delete axios.defaults.headers.common['x-auth-token']
+    }
+
+    export default setAuthToken;
+
+--4 edit reducers/auth.js
+
+    import { REGISTER_SUCCESS, REGISTER_FAIL, USER_LOADED, AUTH_ERROR, LOGIN_SUCCESS, LOGIN_FAIL } from '../actions/types';
+
+    const initialState = {
+        token: localStorage.getItem('token'),
+        isAuthenticated: null,
+        loading: true,
+        user: null
+    }
+
+    export default function(state = initialState, action){
+        const {type, payload} = action;
+        
+        switch(type){
+            case USER_LOADED:
+                return{
+                    ...state,
+                    isAuthenticated: true,
+                    loading: false,
+                    user: payload
+                }
+
+            case REGISTER_SUCCESS:
+            case LOGIN_SUCCESS:
+                localStorage.setItem('token', payload.token);
+                return {...state, ...payload, isAuthenticated: true, loading: false};
+            
+            case REGISTER_FAIL:
+            case AUTH_ERROR:
+            case LOGIN_FAIL:
+                localStorage.removeItem('token');
+                return {...state, token: null, isAuthenticated: false, loading: false};
+
+            default:
+                return state;
+        }
+    }
+
+--5 edit App.js
+    import React, { Fragment, useEffect } from 'react';
+    import { BrowserRouter as Router, Route, Switch } from 'react-router-dom';
+    import Register from './components/auth/Register';
+    import Login from './components/auth/Login';
+    import Navbar from './components/layout/Navbar';
+    import Landing from './components/layout/Landing';
+    import Alert from './components/layout/Alert';
+    //Provider combines redux with react
+    import { Provider } from 'react-redux';
+    import store from './store';
+    import './App.css';
+    import { loadUser } from './actions/auth';
+    import setAuthToken from './utils/setAuthToken';
+
+    //everytime the app loads
+    if(localStorage.token)
+            setAuthToken(localStorage.token)
+
+    const App = () => {
+    // similar to componentDidMount it will only update when [properties] update
+    useEffect(()=>{
+        store.dispatch(loadUser());
+    },[])
+
+    return(
+        <Provider store={ store }>
+        <Router>
+        <Fragment>
+            <Navbar />
+            <Route exact path='/' component={ Landing } />
+            <section className="container">
+            <Alert/>
+            <Switch>
+                <Route exact path = '/register' component = { Register } />
+                <Route exact path = '/login' component = { Login } />
+            </Switch>
+            </section>
+        </Fragment>
+        </Router>
+        </Provider>
+    );
+    }
+    export default App;
+
+--6 edit components/Login.js
+    import React, { Fragment, useState } from 'react';
+    import { Link, Redirect } from 'react-router-dom';
+    import { connect } from 'react-redux';
+    import PropTypes from 'prop-types';
+    import { login } from '../../actions/auth';
+
+    const Login = ({ login, isAuthenticated }) => {
+        const [ formData, setFormData ] = useState({
+            email: '',
+            password: ''
+        });
+
+        const { email, password } = formData;
+
+        const onChange = e => setFormData({...formData, [e.target.name]: e.target.value });
+
+        const onSubmit = async e => {
+            e.preventDefault();
+            login(email, password);
+        }
+
+        //redirect if logged in
+        if(isAuthenticated){
+            return <Redirect to ='/dashboard' />
+        }
+
+        return (
+            <Fragment>
+                <h1 className="large text-primary">Sign In</h1>
+                <p className="lead"><i className="fas fa-user"></i> Sign In</p>
+
+                <form className="form" onSubmit={ e => onSubmit(e) }>
+                    
+                    <div className="form-group">
+                    <input 
+                        type="email" 
+                        placeholder="Email Address" 
+                        name="email" 
+                        value={ email } 
+                        onChange={ e => onChange(e) } 
+                        required
+                    />
+                    </div>
+
+                    <div className="form-group">
+                    <input
+                        type="password"
+                        placeholder="Password"
+                        name="password"
+                        value={ password } 
+                        onChange={ e => onChange(e) }
+                        minLength="6"
+                    />
+                    </div>
+
+                    <input type="submit" className="btn btn-primary" value="Login" />
+                </form>
+                <p className="my-1">
+                    Don't have an account? <Link to="/register">Sign Up</Link>
+                </p>
+            </Fragment>
+        )
+    }
+
+    Login.propTypes = {
+        login: PropTypes.func.isRequired,
+        isAuthenticated: PropTypes.bool
+    }
+
+    const mapStateToProps = state => ({
+        isAuthenticated: state.auth.isAuthenticated
+    });
+
+    export default connect(mapStateToProps, { login })(Login);
+
+--7 edit Register.js
+    import React, { Fragment, useState } from 'react';
+    import { Link, Redirect } from 'react-router-dom';
+    import { connect } from 'react-redux';
+    /*connect is used by the component that wants to interact with redux say calling actions or getting state */
+    import { register } from '../../actions/auth';
+    import { setAlert } from '../../actions/alert';
+    //impt
+    import PropTypes from 'prop-types'
+
+    //const Register = (props) =>
+    const Register = ({ setAlert, register, isAuthenticated }) => {
+        const [ formData, setFormData ] = useState({
+            name: '',
+            email: '',
+            password: '',
+            password2: ''
+        });
+
+        const { name, email, password, password2 } = formData;
+
+        const onChange = e => setFormData({...formData, [e.target.name]: e.target.value });
+
+        const onSubmit = async e => {
+            e.preventDefault();
+            //can be written as props.setAlert('Passwords do not match', 'danger')
+            if(password !== password2)
+                setAlert('Passwords do not match', 'danger', 3000)
+            else
+            register({name, email, password});
+        }
+
+        if(isAuthenticated){
+            return <Redirect to ='/dashboard' />
+        }
+
+        return (
+            <Fragment>
+                <h1 className="large text-primary">Sign Up</h1>
+                <p className="lead"><i className="fas fa-user"></i> Create Your Account</p>
+
+                <form className="form" onSubmit={ e => onSubmit(e) }>
+                    <div className="form-group">
+                    <input 
+                        type="text" 
+                        placeholder="Name" 
+                        name="name" value={ name } 
+                        onChange={ e => onChange(e) } 
+                        //required 
+                    />
+                    </div>
+
+                    <div className="form-group">
+                    <input 
+                        type="email" 
+                        placeholder="Email Address" 
+                        name="email" 
+                        value={ email } 
+                        onChange={ e => onChange(e) } 
+                        //required
+                    />
+                    <small className="form-text"
+                        >This site uses Gravatar so if you want a profile image, use a
+                        Gravatar email</small
+                    >
+                    </div>
+
+                    <div className="form-group">
+                    <input
+                        type="password"
+                        placeholder="Password"
+                        name="password"
+                        value={ password } 
+                        onChange={ e => onChange(e) }
+                        //minLength="6"
+                    />
+                    </div>
+
+                    <div className="form-group">
+                    <input
+                        type="password"
+                        placeholder="Confirm Password"
+                        name="password2"
+                        value={ password2 } 
+                        onChange={ e => onChange(e) }
+                        //minLength="6"
+                    />
+                    </div>
+
+                    <input type="submit" className="btn btn-primary" value="Register" />
+                </form>
+                <p className="my-1">
+                    Already have an account? <Link to="/login">Sign In</Link>
+                </p>
+            </Fragment>
+        )
+    }
+
+    Register.propTypes = {
+        setAlert: PropTypes.func.isRequired,
+        register: PropTypes.func.isRequired,
+        isAuthenticated: PropTypes.bool
+        //ptrf
+    }
+
+    const mapStateToProps = state => ({
+        isAuthenticated: state.auth.isAuthenticated
+    });
+
+    export default connect(mapStateToProps, { setAlert, register })(Register);
+
+    /*connect(state, {actions}) i.e passing state and object of alerts
+    You can now access prop.setAlert
+    */
+
+video 4 logout
+--1 edit src/actions/types (append)
+    export const LOGOUT = 'LOGOUT';
+
+--2 edit actions/auth.js
+    import axios from 'axios';
+    import { setAlert } from './alert';
+    import {REGISTER_SUCCESS, REGISTER_FAIL, USER_LOADED, AUTH_ERROR, LOGIN_SUCCESS, LOGIN_FAIL, LOGOUT } from './types';
+    import setAuthToken from '../utils/setAuthToken';
+    //load user
+    export const loadUser = () => async dispatch => {
+        if(localStorage.token)
+            setAuthToken(localStorage.token)
+        
+        try {
+            const res = await axios.get('/api/auth');
+
+            dispatch({
+                type: USER_LOADED,
+                payload: res.data
+            });
+
+        } catch (err) {
+            dispatch({
+                type: AUTH_ERROR
+            })
+        }
+    }
+
+    //register user
+    export const register = ({ name, email, password }) => async dispatch => {
+        const config = {
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        }
+
+        const body = JSON.stringify({ name, email, password });
+
+        try {
+            const res = await axios.post('/api/users', body, config);
+
+            dispatch({
+                type: REGISTER_SUCCESS,
+                payload: res.data
+                //res.data is the token
+            });
+            dispatch(loadUser());
+        } catch (err) {
+            const errors = err.response.data.errors;
+            if(errors){
+                errors.forEach(error => dispatch(setAlert(error.msg, 'danger',3000)));
+            }
+            dispatch({
+                type: REGISTER_FAIL
+            });
+        }
+    }
+
+    //Login User
+
+    export const login = ( email, password ) => async dispatch => {
+        const config = {
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        }
+
+        const body = JSON.stringify({ email, password });
+
+        try {
+            const res = await axios.post('/api/auth', body, config);
+
+            dispatch({
+                type: LOGIN_SUCCESS,
+                payload: res.data
+                //res.data is the token
+            });
+            dispatch(loadUser());
+        } catch (err) {
+            const errors = err.response.data.errors;
+            if(errors){
+                errors.forEach(error => dispatch(setAlert(error.msg, 'danger',3000)));
+            }
+            dispatch({
+                type: LOGIN_FAIL
+            });
+        }
+    }
+
+    //logout
+    //clear profile
+    export const logout = () => dispatch => {
+        dispatch({type: LOGOUT})
+    }
+
+--3 edit reducers/auth.js
+    import { REGISTER_SUCCESS, REGISTER_FAIL, USER_LOADED, AUTH_ERROR, LOGIN_SUCCESS, LOGIN_FAIL, LOGOUT } from '../actions/types';
+
+    const initialState = {
+        token: localStorage.getItem('token'),
+        isAuthenticated: null,
+        loading: true,
+        user: null
+    }
+
+    export default function(state = initialState, action){
+        const {type, payload} = action;
+        
+        switch(type){
+            case USER_LOADED:
+                return{
+                    ...state,
+                    isAuthenticated: true,
+                    loading: false,
+                    user: payload
+                }
+
+            case REGISTER_SUCCESS:
+            case LOGIN_SUCCESS:
+                localStorage.setItem('token', payload.token);
+                return {...state, ...payload, isAuthenticated: true, loading: false};
+            
+            case REGISTER_FAIL:
+            case AUTH_ERROR:
+            case LOGIN_FAIL:
+            case LOGOUT:
+                localStorage.removeItem('token');
+                return {...state, token: null, isAuthenticated: false, loading: false};
+
+            default:
+                return state;
+        }
+    }
+
+--4 edit components/layout/Navbar.js
+    import React, { Fragment } from 'react';
+    import { Link } from 'react-router-dom';
+    import { connect } from 'react-redux';
+    import PropTypes from 'prop-types';
+    import { logout } from '../../actions/auth';
+
+    export const Navbar = ({ auth: { isAuthenticated, loading }, logout }) => {
+        const authLinks = (
+            <ul>
+                <li><a onClick={ logout } href="#!">
+                        <i className='fas fa-sign-out-alt'/>{' '}
+                        <span className='hide-sm'>Logout</span>
+                    </a>
+                </li>
+            </ul>
+        );
+
+        const guestLinks = (
+            <ul>
+                <li><Link to="/">Developers</Link></li>
+                <li><Link to="/register">Register</Link></li>
+                <li><Link to="/login">Login</Link></li>
+            </ul>    
+        );
+
+        return (
+            <nav className="navbar bg-dark">
+            <h1>
+                <Link to="/"><i className="fas fa-code"></i> DevConnector</Link>
+            </h1>
+            { !loading && (<Fragment>{ isAuthenticated ? authLinks: guestLinks }</Fragment>)}
+            </nav>
+        )
+    }
+
+    Navbar.propTypes = {
+        logout: PropTypes.func.isRequired,
+        auth: PropTypes.object.isRequired
+    }
+
+    const mapStateToProps = state => ({
+        auth: state.auth
+    })
+
+    export default connect(mapStateToProps, { logout })(Navbar);
+
+---------------------------------------------------------------------------------
+        PART THREE(d) - FRONTEND (cont) DASHBOARD & PROFILE MANAGEMENT
+---------------------------------------------------------------------------------
+1-- create file components/dashboard/Dashoard.js
+    import React from 'react'
+    import PropTypes from 'prop-types'
+
+    const Dashboard = props => {
+        return (
+            <div>
+                Dashboard
+            </div>
+        )
+    }
+
+    Dashboard.propTypes = {
+
+    }
+
+    export default Dashboard
+
+2-- create file components/routing/PrivateRoute.js
+    import React from 'react'
+    import { Route, Redirect } from 'react-router-dom'
+    import PropTypes from 'prop-types'
+    import { connect } from 'react-redux'
+
+    //...rest takes anything else that is passed in
+    const PrivateRoute = ({ component: Component, auth: {isAuthenticated, loading}, ...rest }) => (
+        <Route {...rest} render={ props => !isAuthenticated && !loading ? (<Redirect to='/login'/>) : (<Component {...props} />)}/>
+    )
+
+    PrivateRoute.propTypes = {
+        auth: PropTypes.object.isRequired
+    }
+
+    const mapStateToProps = state => ({
+        auth: state.auth
+    })
+
+    export default connect(mapStateToProps)(PrivateRoute)
+
+3-- edit file App.js
+    import React, { Fragment, useEffect } from 'react';
+    import { BrowserRouter as Router, Route, Switch } from 'react-router-dom';
+    import Register from './components/auth/Register';
+    import Login from './components/auth/Login';
+    import Navbar from './components/layout/Navbar';
+    import Landing from './components/layout/Landing';
+    import Dashboard from './components/dashboard/Dashboard';
+    import PrivateRoute from './components/routing/PrivateRoute'
+    import Alert from './components/layout/Alert';
+    //Provider combines redux with react
+    import { Provider } from 'react-redux';
+    import store from './store';
+    import './App.css';
+    import { loadUser } from './actions/auth';
+    import setAuthToken from './utils/setAuthToken';
+
+    //everytime the app loads
+    if(localStorage.token)
+            setAuthToken(localStorage.token)
+
+    const App = () => {
+    // similar to componentDidMount it will only update when [properties] update
+    useEffect(()=>{
+        store.dispatch(loadUser());
+    },[])
+
+    return(
+        <Provider store={ store }>
+        <Router>
+        <Fragment>
+            <Navbar />
+            <Route exact path='/' component={ Landing } />
+            <section className="container">
+            <Alert/>
+            <Switch>
+                <Route exact path = '/register' component = { Register } />
+                <Route exact path = '/login' component = { Login } />
+                <PrivateRoute exact path = '/dashboard' component = { Dashboard } />
+            </Switch>
+            </section>
+        </Fragment>
+        </Router>
+        </Provider>
+    );
+    }
+    export default App;
+
+vid 2,3:
+
+1-- create file reducers/profile.js
+    import { GET_PROFILE, PROFILE_ERROR, CLEAR_PROFILE } from "../actions/types";
+
+    const initialState ={
+        profile: null,
+        profiles: [],
+        repos: [],
+        loading: true,
+        error: {}
+    }
+
+    export default function(state = initialState, action){
+        const { type, payload } = action;
+
+        switch(type){
+            case GET_PROFILE:
+                return {
+                    ...state,
+                    profile: payload,
+                    loading: false
+                }
+            case PROFILE_ERROR:
+                return {
+                    ...state,
+                    error: payload,
+                    loading: false
+                }
+            case CLEAR_PROFILE:
+                return {
+                    ...state,
+                    profile: null,
+                    repos: [],
+                    loading: false
+                }
+
+            default:
+                return state;
+        }
+    }
+
+2-- edit reducers/index.js
+    import { combineReducers } from 'redux';
+    import alert from './alert';
+    import auth from './auth';
+    import profile from './profile';
+
+    export default combineReducers({
+        alert,
+        auth,
+        profile
+    });
+
+3-- edit actions/types.js
+    export const SET_ALERT = 'SET_ALERT';
+    export const REMOVE_ALERT = 'REMOVE_ALERT';
+    export const REGISTER_SUCCESS = 'REGISTER_SUCCESS';
+    export const REGISTER_FAIL = 'REGISTER_FAIL';
+    export const USER_LOADED = 'USER_LOADED';
+    export const AUTH_ERROR = 'AUTH_ERROR';
+    export const LOGIN_SUCCESS = 'LOGIN_SUCCESS';
+    export const LOGIN_FAIL = 'LOGIN_FAIL';
+    export const LOGOUT = 'LOGOUT';
+    export const GET_PROFILE = 'GET_PROFILE';
+    export const CLEAR_PROFILE = 'CLEAR_PROFILE';
+    export const PROFILE_ERROR = 'PROFILE_ERROR';
+
+4-- create actions/profile.js
+    import axios from 'axios'
+    import { setAlert } from './alert'
+    import { GET_PROFILE, PROFILE_ERROR } from './types'
+
+    //get the currrent users profile
+    export const getCurrentProfile = () => async dispatch => {
+
+        try {
+            const res = await axios.get('/api/profile/me');
+
+            dispatch({
+                type: GET_PROFILE,
+                payload: res.data
+            });
+        } catch (err) {
+            dispatch({
+                type: PROFILE_ERROR,
+                payload: { msg: err.response.statusText, status: err.response.status }
+            });
+        }
+    }
+
+5-- edit components/dashboard/Dashoard.js
+    import React, { Fragment, useEffect } from 'react';
+    import { Link } from 'react-router-dom';
+    import PropTypes from 'prop-types';
+    import Spinner from '../layout/Spinner';
+    import { connect } from 'react-redux';
+    import { getCurrentProfile } from '../../actions/profile';
+
+    const Dashboard = ({ getCurrentProfile, auth: { user }, profile: { profile, loading} }) => {
+        useEffect(()=>{
+            getCurrentProfile();
+        }, []);//will run only once
+        return loading && profile === null ? <Spinner/> : <Fragment>
+            <h1 className="large text-primary">Dashboard</h1>
+            <p className="lead">
+                <i className="fas fa-user"></i> Welcome { user && user.name}
+            </p>
+            { profile !== null ? 
+                <Fragment> has </Fragment> 
+                : 
+                <Fragment>
+                    <p>Share your expertise with the world!</p>
+                    <Link to='/create-profile' className='btn btn-primary my-1'>Create Profile</Link>
+                </Fragment>
+            }
+        </Fragment>
+    }
+
+    Dashboard.propTypes = {
+        getCurrentProfile: PropTypes.func.isRequired,
+        auth: PropTypes.object.isRequired,
+        profile: PropTypes.object.isRequired
+    }
+
+    const mapStateToProps = state => ({
+        auth: state.auth,
+        profile: state.profile
+    })
+
+    export default connect(mapStateToProps, { getCurrentProfile })(Dashboard);
+
+6-- edit Navbar.js
+    import React, { Fragment } from 'react';
+    import { Link } from 'react-router-dom';
+    import { connect } from 'react-redux';
+    import PropTypes from 'prop-types';
+    import { logout } from '../../actions/auth';
+
+    export const Navbar = ({ auth: { isAuthenticated, loading }, logout }) => {
+        const authLinks = (
+            <ul>
+                <li><Link to="/dashboard"><i className='fas fa-user'/>{' '}
+                        <span className='hide-sm'>Dashboard</span></Link></li>
+                <li><a onClick={ logout } href="#!">
+                        <i className='fas fa-sign-out-alt'/>{' '}
+                        <span className='hide-sm'>Logout</span>
+                    </a>
+                </li>
+            </ul>
+        );
+
+        const guestLinks = (
+            <ul>
+                <li><Link to="/">Developers</Link></li>
+                <li><Link to="/register">Register</Link></li>
+                <li><Link to="/login">Login</Link></li>
+            </ul>    
+        );
+
+        return (
+            <nav className="navbar bg-dark">
+            <h1>
+                <Link to="/"><i className="fas fa-code"></i> DevConnector</Link>
+            </h1>
+            { !loading && (<Fragment>{ isAuthenticated ? authLinks: guestLinks }</Fragment>)}
+            </nav>
+        )
+    }
+
+    Navbar.propTypes = {
+        logout: PropTypes.func.isRequired,
+        auth: PropTypes.object.isRequired
+    }
+
+    const mapStateToProps = state => ({
+        auth: state.auth
+    })
+
+    export default connect(mapStateToProps, { logout })(Navbar);
+
+7-- edit Landing.js
+    /*
+    ES7 React/Redux snippets
+    racfe (enter)
+    */
+    import React from 'react';
+    import { Link, Redirect } from 'react-router-dom';
+    import { connect } from 'react-redux';
+    import PropTypes from 'prop-types';
+
+    export const Landing = ({ isAuthenticated }) => {
+        if(isAuthenticated){
+            return <Redirect to = '/dashboard'/>
+        }
+        return (
+            <section className="landing">
+            <div className="dark-overlay">
+                <div className="landing-inner">
+                <h1 className="x-large">Developer Connector</h1>
+                <p className="lead">
+                    Create a developer profile/portfolio, share posts and get help from
+                    other developers
+                </p>
+                <div className="buttons">
+                    <Link to="/register" className="btn btn-primary">Sign Up</Link>
+                    <Link to="/login" className="btn btn-light">Login</Link>
+                </div>
+                </div>
+            </div>
+            </section>
+        )
+    }
+    Landing.propTypes = {
+        isAuthenticated: PropTypes.bool
+    }
+
+    const mapStateToProps = state => ({
+        isAuthenticated: state.auth.isAuthenticated
+    })
+
+    export default connect(mapStateToProps)(Landing);
+
+8-- create file components/layout/Spinner.js
+    import React, { Fragment } from 'react'
+    import spinner from './spinner.gif'
+
+    export default () => (
+        <Fragment>
+            <img src={spinner} style={{ width: '200px', margin: 'auto', display: 'block'}} alt='Loading...'/>
+        </Fragment>
+    )
+
+9-- edit actions/auth.js
+    import axios from 'axios';
+    import { setAlert } from './alert';
+    import {REGISTER_SUCCESS, REGISTER_FAIL, USER_LOADED, AUTH_ERROR, LOGIN_SUCCESS, LOGIN_FAIL, LOGOUT, CLEAR_PROFILE } from './types';
+    import setAuthToken from '../utils/setAuthToken';
+    //load user
+    export const loadUser = () => async dispatch => {
+        if(localStorage.token)
+            setAuthToken(localStorage.token)
+        
+        try {
+            const res = await axios.get('/api/auth');
+
+            dispatch({
+                type: USER_LOADED,
+                payload: res.data
+            });
+
+        } catch (err) {
+            dispatch({
+                type: AUTH_ERROR
+            })
+        }
+    }
+
+    //register user
+    export const register = ({ name, email, password }) => async dispatch => {
+        const config = {
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        }
+
+        const body = JSON.stringify({ name, email, password });
+
+        try {
+            const res = await axios.post('/api/users', body, config);
+
+            dispatch({
+                type: REGISTER_SUCCESS,
+                payload: res.data
+                //res.data is the token
+            });
+            dispatch(loadUser());
+        } catch (err) {
+            const errors = err.response.data.errors;
+            if(errors){
+                errors.forEach(error => dispatch(setAlert(error.msg, 'danger',3000)));
+            }
+            dispatch({
+                type: REGISTER_FAIL
+            });
+        }
+    }
+
+    //Login User
+
+    export const login = ( email, password ) => async dispatch => {
+        const config = {
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        }
+
+        const body = JSON.stringify({ email, password });
+
+        try {
+            const res = await axios.post('/api/auth', body, config);
+
+            dispatch({
+                type: LOGIN_SUCCESS,
+                payload: res.data
+                //res.data is the token
+            });
+            dispatch(loadUser());
+        } catch (err) {
+            const errors = err.response.data.errors;
+            if(errors){
+                errors.forEach(error => dispatch(setAlert(error.msg, 'danger',3000)));
+            }
+            dispatch({
+                type: LOGIN_FAIL
+            });
+        }
+    }
+
+    //logout
+    //clear profile
+    export const logout = () => dispatch => {
+        dispatch({type: CLEAR_PROFILE})
+        dispatch({type: LOGOUT})
+    }
+
+vid 4
+1-- CreateProfile.js
+
+    //racfp
+    import React, { Fragment, useState } from 'react'
+    import PropTypes from 'prop-types'
+    import { connect } from 'react-redux'
+
+    const CreateProfile = props => {
+        const [formData, setFormData] = useState({
+            company: '',
+            website: '',
+            location: '',
+            status: '',
+            skills: '',
+            githubusername: '',
+            bio: '',
+            twitter: '',
+            facebook: '',
+            linkedin: '',
+            youtube: '',
+            instagram: ''
+        });
+
+        const [displaySocialInputs, toggleSocialInputs] = useState(false)
+
+        const {
+            company,
+            website,
+            location,
+            status,
+            skills,
+            githubusername,
+            bio,
+            twitter,
+            facebook,
+            linkedin,
+            youtube,
+            instagram
+        } = formData;
+
+        const onChange = e => setFormData({...formData, [e.target.name]: e.target.value });
+
+        return (
+            <Fragment>
+                <h1 className="large text-primary">
+                    Create Your Profile
+                </h1>
+                <p className="lead">
+                    <i className="fas fa-user"></i> Let's get some information to make your
+                    profile stand out
+                </p>
+                <small>* = required field</small>
+                <form className="form">
+                    <div className="form-group">
+                    <select name="status" value={status} onChange={e=> onChange(e)}>
+                        <option value="0">* Select Professional Status</option>
+                        <option value="Developer">Developer</option>
+                        <option value="Junior Developer">Junior Developer</option>
+                        <option value="Senior Developer">Senior Developer</option>
+                        <option value="Manager">Manager</option>
+                        <option value="Student or Learning">Student or Learning</option>
+                        <option value="Instructor">Instructor or Teacher</option>
+                        <option value="Intern">Intern</option>
+                        <option value="Other">Other</option>
+                    </select>
+                    <small className="form-text"
+                        >Give us an idea of where you are at in your career</small
+                    >
+                    </div>
+                    <div className="form-group">
+                    <input type="text" placeholder="Company" name="company" value={company} onChange={e=> onChange(e)}/>
+                    <small className="form-text"
+                        >Could be your own company or one you work for</small
+                    >
+                    </div>
+                    <div className="form-group">
+                    <input type="text" placeholder="Website" name="website" value={website} onChange={e=> onChange(e)}/>
+                    <small className="form-text"
+                        >Could be your own or a company website</small
+                    >
+                    </div>
+                    <div className="form-group">
+                    <input type="text" placeholder="Location" name="location" value={location} onChange={e=> onChange(e)}/>
+                    <small className="form-text"
+                        >City & state suggested (eg. Bengaluru, India)</small
+                    >
+                    </div>
+                    <div className="form-group">
+                    <input type="text" placeholder="* Skills" name="skills" value={skills} onChange={e=> onChange(e)}/>
+                    <small className="form-text"
+                        >Please use comma separated values (eg.
+                        HTML,CSS,JavaScript,PHP)</small
+                    >
+                    </div>
+                    <div className="form-group">
+                    <input
+                        type="text"
+                        placeholder="Github Username"
+                        name="githubusername"
+                        value={githubusername} onChange={e=> onChange(e)}
+                    />
+                    <small className="form-text"
+                        >If you want your latest repos and a Github link, include your
+                        username</small
+                    >
+                    </div>
+                    <div className="form-group">
+                    <textarea placeholder="A short bio of yourself" name="bio" value={bio} onChange={e=> onChange(e)}></textarea>
+                    <small className="form-text">Tell us a little about yourself</small>
+                    </div>
+
+                    <div className="my-2">
+                    <button type="button" onClick={()=>toggleSocialInputs(!displaySocialInputs)} className="btn btn-light">
+                        Add Social Network Links
+                    </button>
+                    <span>Optional</span>
+                    </div>
+
+                    {displaySocialInputs && <Fragment>
+                        <div className="form-group social-input">
+                        <i className="fab fa-twitter fa-2x"></i>
+                        <input type="text" placeholder="Twitter URL" name="twitter" value={twitter} onChange={e=> onChange(e)}/>
+                        </div>
+
+                        <div className="form-group social-input">
+                        <i className="fab fa-facebook fa-2x"></i>
+                        <input type="text" placeholder="Facebook URL" name="facebook" value={facebook} onChange={e=> onChange(e)}/>
+                        </div>
+
+                        <div className="form-group social-input">
+                        <i className="fab fa-youtube fa-2x"></i>
+                        <input type="text" placeholder="YouTube URL" name="youtube" value={youtube} onChange={e=> onChange(e)}/>
+                        </div>
+
+                        <div className="form-group social-input">
+                        <i className="fab fa-linkedin fa-2x"></i>
+                        <input type="text" placeholder="Linkedin URL" name="linkedin" value={linkedin} onChange={e=> onChange(e)}/>
+                        </div>
+
+                        <div className="form-group social-input">
+                        <i className="fab fa-instagram fa-2x"></i>
+                        <input type="text" placeholder="Instagram URL" name="instagram" value={instagram} onChange={e=> onChange(e)}/>
+                        </div>
+                        </Fragment>}
+                
+                    <input type="submit" className="btn btn-primary my-1" />
+                    <a className="btn btn-light my-1" href="dashboard.html">Go Back</a>
+                </form>
+            </Fragment>
+        )
+    }
+
+    CreateProfile.propTypes = {
+
+    }
+
+    export default CreateProfile
+2-- edit App.js
+    import React, { Fragment, useEffect } from 'react';
+    import { BrowserRouter as Router, Route, Switch } from 'react-router-dom';
+    import Register from './components/auth/Register';
+    import Login from './components/auth/Login';
+    import Navbar from './components/layout/Navbar';
+    import Landing from './components/layout/Landing';
+    import Dashboard from './components/dashboard/Dashboard';
+    import PrivateRoute from './components/routing/PrivateRoute'
+    import CreateProfile from './components/profile-forms/CreateProfile';
+    import Alert from './components/layout/Alert';
+    //Provider combines redux with react
+    import { Provider } from 'react-redux';
+    import store from './store';
+    import './App.css';
+    import { loadUser } from './actions/auth';
+    import setAuthToken from './utils/setAuthToken';
+
+    //everytime the app loads
+    if(localStorage.token)
+            setAuthToken(localStorage.token)
+
+    const App = () => {
+    // similar to componentDidMount it will only update when [properties] update
+    useEffect(()=>{
+        store.dispatch(loadUser());
+    },[])
+
+    return(
+        <Provider store={ store }>
+        <Router>
+        <Fragment>
+            <Navbar />
+            <Route exact path='/' component={ Landing } />
+            <section className="container">
+            <Alert/>
+            <Switch>
+                <Route exact path = '/register' component = { Register } />
+                <Route exact path = '/login' component = { Login } />
+                <PrivateRoute exact path = '/dashboard' component = { Dashboard } />
+                <PrivateRoute exact path = '/create-profile' component = { CreateProfile } />
+            </Switch>
+            </section>
+        </Fragment>
+        </Router>
+        </Provider>
+    );
+    }
+    export default App;
+
+vid 5
+1-- edit actions/profile.js
+2-- edit CreateProfile.js
+    import axios from 'axios'
+    import { setAlert } from './alert'
+    import { GET_PROFILE, PROFILE_ERROR } from './types'
+
+    //get the currrent users profile
+    export const getCurrentProfile = () => async dispatch => {
+
+        try {
+            const res = await axios.get('/api/profile/me');
+
+            dispatch({
+                type: GET_PROFILE,
+                payload: res.data
+            });
+        } catch (err) {
+            dispatch({
+                type: PROFILE_ERROR,
+                payload: { msg: err.response.statusText, status: err.response.status }
+            });
+        }
+    }
+
+    //create or update profile
+    //push will redirect back to client side
+    export const createProfile = (formData, history, edit = false) => async dispatch => {
+        try {
+            const config = {
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            }
+
+            const res = await axios.post('/api/profile', formData, config);
+
+            dispatch({
+                type: GET_PROFILE,
+                payload: res.data
+            });
+
+            dispatch(setAlert(edit ? 'Profile Updated' : 'Profile Created', 'success', 3000));
+
+            if(!edit){
+                history.push('/dashboard');
+            }
+        } catch (err) {
+            const errors = err.response.data.errors;
+            if(errors){
+                errors.forEach(error => dispatch(setAlert(error.msg, 'danger',3000)));
+            }
+
+            dispatch({
+                type: PROFILE_ERROR,
+                payload: { msg: err.response.statusText, status: err.response.status }
+            });
+        }
+    }
+
+
+    //racfp
+    import React, { Fragment, useState } from 'react'
+    import PropTypes from 'prop-types'
+    import { connect } from 'react-redux'
+    import { createProfile } from '../../actions/profile'
+    import { Link, withRouter } from 'react-router-dom'
+
+    const CreateProfile = ({ createProfile, history }) => {
+        const [formData, setFormData] = useState({
+            company: '',
+            website: '',
+            location: '',
+            status: '',
+            skills: '',
+            githubusername: '',
+            bio: '',
+            twitter: '',
+            facebook: '',
+            linkedin: '',
+            youtube: '',
+            instagram: ''
+        });
+
+        const [displaySocialInputs, toggleSocialInputs] = useState(false)
+
+        const {
+            company,
+            website,
+            location,
+            status,
+            skills,
+            githubusername,
+            bio,
+            twitter,
+            facebook,
+            linkedin,
+            youtube,
+            instagram
+        } = formData;
+
+        const onChange = e => setFormData({...formData, [e.target.name]: e.target.value });
+
+        const onSubmit = e => {
+            e.preventDefault();
+            createProfile(formData, history)
+        }
+
+        return (
+            <Fragment>
+                <h1 className="large text-primary">
+                    Create Your Profile
+                </h1>
+                <p className="lead">
+                    <i className="fas fa-user"></i> Let's get some information to make your
+                    profile stand out
+                </p>
+                <small>* = required field</small>
+                <form className="form" onSubmit={e=> onSubmit(e)}>
+                    <div className="form-group">
+                    <select name="status" value={status} onChange={e=> onChange(e)}>
+                        <option value="0">* Select Professional Status</option>
+                        <option value="Developer">Developer</option>
+                        <option value="Junior Developer">Junior Developer</option>
+                        <option value="Senior Developer">Senior Developer</option>
+                        <option value="Manager">Manager</option>
+                        <option value="Student or Learning">Student or Learning</option>
+                        <option value="Instructor">Instructor or Teacher</option>
+                        <option value="Intern">Intern</option>
+                        <option value="Other">Other</option>
+                    </select>
+                    <small className="form-text"
+                        >Give us an idea of where you are at in your career</small
+                    >
+                    </div>
+                    <div className="form-group">
+                    <input type="text" placeholder="Company" name="company" value={company} onChange={e=> onChange(e)}/>
+                    <small className="form-text"
+                        >Could be your own company or one you work for</small
+                    >
+                    </div>
+                    <div className="form-group">
+                    <input type="text" placeholder="Website" name="website" value={website} onChange={e=> onChange(e)}/>
+                    <small className="form-text"
+                        >Could be your own or a company website</small
+                    >
+                    </div>
+                    <div className="form-group">
+                    <input type="text" placeholder="Location" name="location" value={location} onChange={e=> onChange(e)}/>
+                    <small className="form-text"
+                        >City & state suggested (eg. Bengaluru, India)</small
+                    >
+                    </div>
+                    <div className="form-group">
+                    <input type="text" placeholder="* Skills" name="skills" value={skills} onChange={e=> onChange(e)}/>
+                    <small className="form-text"
+                        >Please use comma separated values (eg.
+                        HTML,CSS,JavaScript,PHP)</small
+                    >
+                    </div>
+                    <div className="form-group">
+                    <input
+                        type="text"
+                        placeholder="Github Username"
+                        name="githubusername"
+                        value={githubusername} onChange={e=> onChange(e)}
+                    />
+                    <small className="form-text"
+                        >If you want your latest repos and a Github link, include your
+                        username</small
+                    >
+                    </div>
+                    <div className="form-group">
+                    <textarea placeholder="A short bio of yourself" name="bio" value={bio} onChange={e=> onChange(e)}></textarea>
+                    <small className="form-text">Tell us a little about yourself</small>
+                    </div>
+
+                    <div className="my-2">
+                    <button type="button" onClick={()=>toggleSocialInputs(!displaySocialInputs)} className="btn btn-light">
+                        Add Social Network Links
+                    </button>
+                    <span>Optional</span>
+                    </div>
+
+                    {displaySocialInputs && <Fragment>
+                        <div className="form-group social-input">
+                        <i className="fab fa-twitter fa-2x"></i>
+                        <input type="text" placeholder="Twitter URL" name="twitter" value={twitter} onChange={e=> onChange(e)}/>
+                        </div>
+
+                        <div className="form-group social-input">
+                        <i className="fab fa-facebook fa-2x"></i>
+                        <input type="text" placeholder="Facebook URL" name="facebook" value={facebook} onChange={e=> onChange(e)}/>
+                        </div>
+
+                        <div className="form-group social-input">
+                        <i className="fab fa-youtube fa-2x"></i>
+                        <input type="text" placeholder="YouTube URL" name="youtube" value={youtube} onChange={e=> onChange(e)}/>
+                        </div>
+
+                        <div className="form-group social-input">
+                        <i className="fab fa-linkedin fa-2x"></i>
+                        <input type="text" placeholder="Linkedin URL" name="linkedin" value={linkedin} onChange={e=> onChange(e)}/>
+                        </div>
+
+                        <div className="form-group social-input">
+                        <i className="fab fa-instagram fa-2x"></i>
+                        <input type="text" placeholder="Instagram URL" name="instagram" value={instagram} onChange={e=> onChange(e)}/>
+                        </div>
+                        </Fragment>}
+                
+                    <input type="submit" className="btn btn-primary my-1" />
+                    <Link className="btn btn-light my-1" to="/dashboard">Go Back</Link>
+                </form>
+            </Fragment>
+        )
+    }
+
+    CreateProfile.propTypes = {
+        createProfile: PropTypes.func.isRequired
+    }
+
+    export default connect(null, {createProfile})(withRouter(CreateProfile))
+
+vid 6
+1-- create file components/dashboard/DashboardActions.js
+    import React from 'react'
+    import { Link } from 'react-router-dom'
+
+    const DashboardActions = () => {
+        return (
+            <div class="dash-buttons">
+                <Link to="/edit-profile" class="btn btn-light"
+                ><i class="fas fa-user-circle text-primary"></i> Edit Profile</Link>
+
+                <Link to="/add-experience" class="btn btn-light"
+                ><i class="fab fa-black-tie text-primary"></i> Add Experience</Link >
+
+                <Link to="/add-education" class="btn btn-light"
+                ><i class="fas fa-graduation-cap text-primary"></i> Add Education</Link>
+            </div>
+        )
+    }
+
+    export default DashboardActions
+
+3-- create profile-forms/EditProfile.js
+    //racfp
+    import React, { Fragment, useState, useEffect } from 'react'
+    import PropTypes from 'prop-types'
+    import { connect } from 'react-redux'
+    import { createProfile, getCurrentProfile } from '../../actions/profile'
+    import { Link, withRouter } from 'react-router-dom'
+
+    const EditProfile = ({ profile:{profile, loading}, createProfile, getCurrentProfile, history }) => {
+        const [formData, setFormData] = useState({
+            company: '',
+            website: '',
+            location: '',
+            status: '',
+            skills: '',
+            githubusername: '',
+            bio: '',
+            twitter: '',
+            facebook: '',
+            linkedin: '',
+            youtube: '',
+            instagram: ''
+        });
+
+        const [displaySocialInputs, toggleSocialInputs] = useState(false)
+
+        useEffect(()=>{
+            getCurrentProfile();
+
+            setFormData({
+                company: loading || !profile.company ? ' ' : profile.company,
+                website: loading || !profile.website ? ' ' : profile.website,
+                location: loading || !profile.loading ? ' ' : profile.loading,
+                status: loading || !profile.status ? ' ' : profile.status,
+                skills: loading || !profile.skills ? ' ' : profile.skills.join(','),
+                githubusername: loading || !profile.githubusername ? ' ' : profile.githubusername,
+                bio: loading || !profile.bio ? ' ' : profile.bio,
+                twitter: loading || !profile.twitter ? ' ' : profile.twitter,
+                facebook: loading || !profile.facebook ? ' ' : profile.facebook,
+                linkedin: loading || !profile.linkedin ? ' ' : profile.linkedin,
+                youtube: loading || !profile.youtube ? ' ' : profile.youtube,
+                instagram: loading || !profile.instagram ? ' ' : profile.instagram
+            })
+        },[loading]);
+
+        const {
+            company,
+            website,
+            location,
+            status,
+            skills,
+            githubusername,
+            bio,
+            twitter,
+            facebook,
+            linkedin,
+            youtube,
+            instagram
+        } = formData;
+
+        const onChange = e => setFormData({...formData, [e.target.name]: e.target.value });
+
+        const onSubmit = e => {
+            e.preventDefault();
+            createProfile(formData, history, true)
+        }
+
+        return (
+            <Fragment>
+                <h1 className="large text-primary">
+                    Create Your Profile
+                </h1>
+                <p className="lead">
+                    <i className="fas fa-user"></i> Let's get some information to make your
+                    profile stand out
+                </p>
+                <small>* = required field</small>
+                <form className="form" onSubmit={e=> onSubmit(e)}>
+                    <div className="form-group">
+                    <select name="status" value={status} onChange={e=> onChange(e)}>
+                        <option value="0">* Select Professional Status</option>
+                        <option value="Developer">Developer</option>
+                        <option value="Junior Developer">Junior Developer</option>
+                        <option value="Senior Developer">Senior Developer</option>
+                        <option value="Manager">Manager</option>
+                        <option value="Student or Learning">Student or Learning</option>
+                        <option value="Instructor">Instructor or Teacher</option>
+                        <option value="Intern">Intern</option>
+                        <option value="Other">Other</option>
+                    </select>
+                    <small className="form-text"
+                        >Give us an idea of where you are at in your career</small
+                    >
+                    </div>
+                    <div className="form-group">
+                    <input type="text" placeholder="Company" name="company" value={company} onChange={e=> onChange(e)}/>
+                    <small className="form-text"
+                        >Could be your own company or one you work for</small
+                    >
+                    </div>
+                    <div className="form-group">
+                    <input type="text" placeholder="Website" name="website" value={website} onChange={e=> onChange(e)}/>
+                    <small className="form-text"
+                        >Could be your own or a company website</small
+                    >
+                    </div>
+                    <div className="form-group">
+                    <input type="text" placeholder="Location" name="location" value={location} onChange={e=> onChange(e)}/>
+                    <small className="form-text"
+                        >City & state suggested (eg. Bengaluru, India)</small
+                    >
+                    </div>
+                    <div className="form-group">
+                    <input type="text" placeholder="* Skills" name="skills" value={skills} onChange={e=> onChange(e)}/>
+                    <small className="form-text"
+                        >Please use comma separated values (eg.
+                        HTML,CSS,JavaScript,PHP)</small
+                    >
+                    </div>
+                    <div className="form-group">
+                    <input
+                        type="text"
+                        placeholder="Github Username"
+                        name="githubusername"
+                        value={githubusername} onChange={e=> onChange(e)}
+                    />
+                    <small className="form-text"
+                        >If you want your latest repos and a Github link, include your
+                        username</small
+                    >
+                    </div>
+                    <div className="form-group">
+                    <textarea placeholder="A short bio of yourself" name="bio" value={bio} onChange={e=> onChange(e)}></textarea>
+                    <small className="form-text">Tell us a little about yourself</small>
+                    </div>
+
+                    <div className="my-2">
+                    <button type="button" onClick={()=>toggleSocialInputs(!displaySocialInputs)} className="btn btn-light">
+                        Add Social Network Links
+                    </button>
+                    <span>Optional</span>
+                    </div>
+
+                    {displaySocialInputs && <Fragment>
+                        <div className="form-group social-input">
+                        <i className="fab fa-twitter fa-2x"></i>
+                        <input type="text" placeholder="Twitter URL" name="twitter" value={twitter} onChange={e=> onChange(e)}/>
+                        </div>
+
+                        <div className="form-group social-input">
+                        <i className="fab fa-facebook fa-2x"></i>
+                        <input type="text" placeholder="Facebook URL" name="facebook" value={facebook} onChange={e=> onChange(e)}/>
+                        </div>
+
+                        <div className="form-group social-input">
+                        <i className="fab fa-youtube fa-2x"></i>
+                        <input type="text" placeholder="YouTube URL" name="youtube" value={youtube} onChange={e=> onChange(e)}/>
+                        </div>
+
+                        <div className="form-group social-input">
+                        <i className="fab fa-linkedin fa-2x"></i>
+                        <input type="text" placeholder="Linkedin URL" name="linkedin" value={linkedin} onChange={e=> onChange(e)}/>
+                        </div>
+
+                        <div className="form-group social-input">
+                        <i className="fab fa-instagram fa-2x"></i>
+                        <input type="text" placeholder="Instagram URL" name="instagram" value={instagram} onChange={e=> onChange(e)}/>
+                        </div>
+                        </Fragment>}
+                
+                    <input type="submit" className="btn btn-primary my-1" />
+                    <Link className="btn btn-light my-1" to="/dashboard">Go Back</Link>
+                </form>
+            </Fragment>
+        )
+    }
+
+    EditProfile.propTypes = {
+        createProfile: PropTypes.func.isRequired,
+        profile: PropTypes.object.isRequired,
+        getCurrentProfile: PropTypes.func.isRequired,
+    }
+
+    const mapStateToProps = state => ({
+        profile: state.profile
+    })
+
+    export default connect(mapStateToProps, {createProfile, getCurrentProfile})(withRouter(EditProfile))
+
+4-- edit App.js
+    import React, { Fragment, useEffect } from 'react';
+    import { BrowserRouter as Router, Route, Switch } from 'react-router-dom';
+    import Register from './components/auth/Register';
+    import Login from './components/auth/Login';
+    import Navbar from './components/layout/Navbar';
+    import Landing from './components/layout/Landing';
+    import Dashboard from './components/dashboard/Dashboard';
+    import PrivateRoute from './components/routing/PrivateRoute'
+    import CreateProfile from './components/profile-forms/CreateProfile';
+    import EditProfile from './components/profile-forms/EditProfile'
+    import Alert from './components/layout/Alert';
+    //Provider combines redux with react
+    import { Provider } from 'react-redux';
+    import store from './store';
+    import './App.css';
+    import { loadUser } from './actions/auth';
+    import setAuthToken from './utils/setAuthToken';
+
+    //everytime the app loads
+    if(localStorage.token)
+            setAuthToken(localStorage.token)
+
+    const App = () => {
+    // similar to componentDidMount it will only update when [properties] update
+    useEffect(()=>{
+        store.dispatch(loadUser());
+    },[])
+
+    return(
+        <Provider store={ store }>
+        <Router>
+        <Fragment>
+            <Navbar />
+            <Route exact path='/' component={ Landing } />
+            <section className="container">
+            <Alert/>
+            <Switch>
+                <Route exact path = '/register' component = { Register } />
+                <Route exact path = '/login' component = { Login } />
+                <PrivateRoute exact path = '/dashboard' component = { Dashboard } />
+                <PrivateRoute exact path = '/create-profile' component = { CreateProfile } />
+                <PrivateRoute exact path = '/edit-profile' component = { EditProfile } />
+            </Switch>
+            </section>
+        </Fragment>
+        </Router>
+        </Provider>
+    );
+    }
+    export default App;
+

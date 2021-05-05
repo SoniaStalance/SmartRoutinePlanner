@@ -1,0 +1,368 @@
+Requirements:
+1. nodejs
+2. git
+3. postman
+4. react devtools chrome ext
+5. redux devtools chrome ext
+
+Init Setup:
+1. vscode
+-- es7 react, redux, react-native extension
+-- settings.json emmit include languages
+    "javascript": "javascriptreact"
+
+2. mongo atlas
+-- create project
+-- create cluster free tier
+-- add user to access db
+-- whitelist ip address
+
+3. vscode
+-- create .gitignore
+    node_modules/
+
+-- git init
+-- npm init
+    starting point: server.js
+    license       : MIT
+
+-- install regular dependencies 
+    npm i express express-validator bcryptjs config gravatar jsonwebtoken mongoose request
+
+-- install dev dependencies
+    npm i -D nodemon concurrently 
+
+--package.json replace "test" with "start"
+    "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+
+  rewrite as:-
+
+  "scripts": {
+    "start": "node server",
+    "server": "nodemon server"
+  },
+
+Steps:
+---------------------------------------------------------------------------------
+                                PART ONE
+---------------------------------------------------------------------------------
+
+1-- CREATING EXPRESS SERVER AND INITIALIZING APP
+                TERMINAL: npm run server
+                POSTMAN: GET: http://localhost:5000
+                                You should be able to see the response "API Running"
+
+2-- CONNECTING TO MONGO DB
+                TERMINAL: npm run server
+                    You should be able to see "Database connected"
+
+3-- CREATING ROUTES
+4-- UPDATE server.js
+        GOTO POSTMAN and check if the routes are working
+
+5-- CREATE COLLECTIONS IN POSTMAN
+
+6-- MODELS *Naming convention- Start with uppercase
+7-- UPDATE users.js
+8-- UPDATE server.js
+
+    GOTO POSTMAN AND POST REQUEST
+    -   HEADERS
+            KEY             VALUE
+            Content-Type    application/json
+
+    -   BODY -> raw
+        {
+            "name":"sonia"
+        }
+
+9-- UPDATE users.js FOR VALIDATION
+        POST in POSTMAN to see 400 bad req
+        POST correct details in req and see 200 OK
+        -Save as -> Register User in collection 'Users & Auth'
+
+10-- UPDATE users.js
+        POSTMAN Register User -> SEND
+        GOTO COLLECTIONS in MONGO DB and check if the user 'sonia' is saved.
+
+---------------------------------------------------------------------------------
+                                PART TWO
+---------------------------------------------------------------------------------
+1-- UPDATE default.json
+
+2-- UPDATE user.js
+
+GOTO MONGO DB and DELETE users COLLECTION
+GOTO POSTMAN and SEND Register User again
+
+3-- MIDDLEWARE
+4-- UPDATE routes/api/auth.js
+    GOTO POSTMAN use token to pass authorization (i.e. x-auth-token)
+    save as 'get auth user' in 'Users & Auth' collection
+
+5-- UPDATE routes/api/auth.js
+    GOTO POSTMAN and POST json to login and receive token, save as 'Login User' in collection 'User & Auth'
+    {
+        "email": "xyz@abc.com",
+        "password":"*******"
+    }
+
+6-- models/Profile.js
+7-- routes/api/profile.js
+GOTO POSTMAN & POST profile json to http://localhost:5000/api/profile
+Save as Create and Update Profile in Profile collection
+
+8-- TO GET ALL PROFILES
+UPDATE routes/api/profile.js
+GOTO POSTMAN & GET profile json to http://localhost:5000/api/profile
+Save as ALL PROFILES in Profile collection
+
+GET PROFILE BY USER_ID
+GOTO POSTMAN & GET
+http://localhost:5000/api/profile/user/<user_id>
+
+9-- DELETE USER, PROFILE, POSTS
+GOTO POSTMAN DELETE http://localhost:5000/api/profile
+pass x-auth-token 
+
+Save as 'Delete user n profile' in profile collection
+
+10-- ADD EXPERIENCE TO PROFILE
+GOTO POSTMAN PUT http://ocalhost/api/profile/experience
+headers: content-type: json
+         x-auth-token
+body: raw json
+
+11-- DELETE EXPERIENCE FROM PROFILE
+GOTO POSTMAN DELETE http://ocalhost/api/profile/experience/exp_id
+headers: x-auth-token
+
+12a-- ADD EDUCATION TO PROFILE
+GOTO POSTMAN PUT http://ocalhost/api/profile/education
+headers: content-type: json
+         x-auth-token
+body: raw json
+
+12b-- DELETE EXPERIENCE FROM PROFILE
+GOTO POSTMAN DELETE http://ocalhost/api/profile/education/edu_id
+headers: x-auth-token
+
+13a-- GITHUB API
+https://www.github.com/settings/developers
+Register new o auth app
+home url & callback url 
+http://localhost:5000
+
+Copy Client ID & Secret to cofig/default.json
+
+{
+    "mongoURI": "mongodb+srv://sonia:sonia@devconnector.voiv1.mongodb.net/<dbname>?retryWrites=true&w=majority",
+    "jwtSecret": "mysecrettoken",
+    "githubClientId": "88f2fb9222321b92a0c5",
+    "githubSecret": "284329d5328abe8498b80bb838d8331c426b0b60"
+}
+
+13b -- UPDATE routes/api/profile.js
+GOTO POSTMAN GET http://localhost:5000/api/profile/github/SoniaStalance
+
+14-- Creating the Post model
+15-- Modify routes/api/posts.js
+        -create post, get post, del post
+        -like / unlike
+        -add / remove comments
+
+---------------------------------------------------------------------------------
+                                PART THREE - FRONTEND
+---------------------------------------------------------------------------------
+npx create-react-app client
+cd client
+npm start
+
+--Modify package.json
+
+"scripts": {
+    "start": "node server",
+    "server": "nodemon server",
+    "client": "npm start --prefix client",
+    "dev": "concurrently \"npm run server\"\"npm run client\""
+  }
+
+--terminal:
+cd ..
+npm run dev
+
+cd client
+npm i axios react-router-dom redux react-redux redux-thunk redux-devtools-extension moment react-moment
+* axios to make http req
+*  redux-thunk to make async req in actions (middleware)
+* moment is a date and time library
+
+in client folder Delete
+-gitignore
+-readme.md
+
+in terminal cd DEVCONNECTOR/client
+rm -rf .git
+cd ..
+
+then goto client/package.json (to add proxy)
+"proxy": "http://localhost:5000"
+(put , and paste before the last curly bracket)
+
+goto client/src (delete)
+-serviceWorker.js
+-index.css
+-App.test.js
+-logo.svg
+
+1-- Clear App.css goto theme css/styles.css copy n paste in App.css
+    in App.css search for landing and in src replace .. with . (search in same dir)
+
+    Create a folder img and put showcase.jpg
+
+-- Search for fontawesome and copy paste that link in public/index.html
+2-- Create client/src/components/layout/Navbar.js
+                                layout/Landing.js
+
+    npm run dev
+
+3-- Edit App.js
+
+4(a)--Create client/src/components/auth/Login.js
+4(b)  Create client/src/components/auth/Register.js
+4(c)  Edit Navbar.js, Landing.js
+
+            npm run dev
+
+5--Edit Register.js (Example for req / res but we won't be doing it this way)
+    npm run dev
+    register new user 
+    check if user is added to mongodb
+
+---------------------------------------------------------------------------------
+                        PART THREE - FRONTEND (cont) REDUX
+---------------------------------------------------------------------------------
+create dir client/src/reducers
+create file client/src/reducers/index.js
+
+1-- create file client/src/store.js
+2-- Edit App.js
+    (i.e. to incl a provider that combines redux with react, when wrapped with provider then all components can access the state)
+
+3-- create reducers/alert.js
+4-- edit reducers/index.js
+ -- create dir src/actions
+5-- create file src/actions/types.js
+6-- create file src/actions/alert.js
+ -- installation for universal id
+    cd client
+    npm i uuid
+7- Edit Register.js
+8-- create client/src/components/layout/Alert.js
+    NOTE: this is the alert component
+9-- Edit App.js
+
+COMPONENT (calls)--> ACTION (dispatches {type, payload})--> REDUCER (returns state, payload)--,
+    |                                                                                         |
+    `-------------------<<<------------------------------<<<----------------------------------'
+
+EXAMPLE:
+~~~~~~~~~
+    <   component   >
+        Register.js
+props.setAlert('my-msg','danger')
+            |
+            |
+            v
+    <     actions    >
+          alert.js   
+        dispatch({
+        type: SET_ALERT,
+        payload: {my-msg, danger, id}})
+            |
+            |
+            v
+    <     reducers    >
+          alert.js
+        case SET_ALERT:
+        return [...state, payload];
+            |
+            |
+            v
+    <   component   >
+        Register.js
+
+---------------------------------------------------------------------------------
+                PART THREE - FRONTEND (cont) USER AUTHENTICATION
+---------------------------------------------------------------------------------
+video 1
+--1 create file reducers/auth.js
+--2 edit actions/types.js
+--3 create actions/auth.js
+--4 edit Register.js
+--5 edit reducers/index.js
+
+video 2,3 login
+--1 edit actions/types.js
+--2 edit actions/auth.js
+--3 create file src/utils/setAuthToken.js
+--4 edit reducers/auth.js
+--5 edit App.js
+--6 edit components/Login.js
+--7 edit Register.js
+
+in localhost check if you're able to login and redirected to blank dashboard
+
+video 4 logout
+--1 edit src/actions/types (append)
+--2 edit actions/auth.js
+--3 edit reducers/auth.js
+--4 edit components/layout/Navbar.js
+
+---------------------------------------------------------------------------------
+                PART THREE(d) - FRONTEND (cont) DASHBOARD
+---------------------------------------------------------------------------------
+vid 1:
+1-- create file components/dashboard/Dashoard.js
+2-- create file components/routing/PrivateRoute.js
+3-- edit file App.js
+
+Now you should be able to login and logout pretty nicely :)
+
+vid 2, 3:
+1-- create file reducers/profile.js
+2-- edit reducers/index.js
+3-- edit actions/types.js
+4-- create actions/profile.js
+5-- edit components/dashboard/Dashoard.js
+
+6-- edit Navbar.js
+7-- edit Landing.js
+8-- create file components/layout/Spinner.js
+9-- edit actions/auth.js
+
+Now you should be able to login and view if user has profile or not :)
+
+vid 4:
+1-- create dir components/profile-forms
+    create file components/profile-forms/CreateProfile.js
+2-- edit App.js
+
+vid 5:
+1-- edit actions/profile.js
+2-- edit CreateProfile.js
+
+vid 6:
+1-- create file components/dashboard/DashboardActions.js
+2-- edit Dashboard.js
+        import DashboardActions from './DashboardActions'
+        replace has with <DashboardActions />
+3-- create file profile-forms/EditProfile.js
+4-- edit App.js
+
+vid 7:
+1-- edit types.js
+    export const UPDATE_PROFILE = 'UPDATE_PROFILE';
+2-- edit actions/profile.js
