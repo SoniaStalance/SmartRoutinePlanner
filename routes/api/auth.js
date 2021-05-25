@@ -1,16 +1,16 @@
 const express = require('express');
-    const router = express.Router();
-    const auth = require('../../middleware/auth');
-    const User = require('../../models/User');
-    const jwt = require('jsonwebtoken');
-    const config = require('config');
-    const {check, validationResult} = require('express-validator');
-    const bcrypt = require('bcryptjs');
+const router = express.Router();
+const auth = require('../../middleware/auth');
+const User = require('../../models/User');
+const jwt = require('jsonwebtoken');
+const config = require('config');
+const {check, validationResult} = require('express-validator');
+const bcrypt = require('bcryptjs');
 
 
     /*
     --GET api/auth
-    --test route
+    --get user data
     --public
     */
 
@@ -26,7 +26,7 @@ const express = require('express');
 
     /*
     --POST api/auth
-    --authenticate usere and get data
+    --authenticate user and get token
     --public
     */
 
@@ -77,3 +77,4 @@ const express = require('express');
     });
 
     module.exports = router;
+    

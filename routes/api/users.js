@@ -20,7 +20,7 @@ const express = require('express');
             return res.status(400).json({errors: errors.array()})
         }
 
-        const {name, email, password} = req.body;
+        const {name, email, password, admin} = req.body;        
 
         try{
             let user = await User.findOne({email});
@@ -33,14 +33,23 @@ const express = require('express');
                 r:"pg",
                 d:"mm"
             });
-        
-            user = new User({
+
+            userFields = {
                 name,
                 email,
                 avatar,
                 password
-            });
+            };
+
+            if(admin){
+                if(admin == true || admin == false){
+                    userFields.admin = admin
+                }
+            }
+            console.log(userFields.admin)
         
+            user = new User(userFields);
+
             const salt = await bcrypt.genSalt(10);
             user.password = await bcrypt.hash(password, salt);
 

@@ -13,6 +13,10 @@ const mongoose = require('mongoose');
             type: String,
             required: true
         },
+        admin: {
+            type: Boolean,
+            default: false
+        },
         avatar:{
             type: String
         },
