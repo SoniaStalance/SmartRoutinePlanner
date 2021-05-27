@@ -8,6 +8,7 @@ const Plan = require('../../models/Plan');
 
 const tf = require('@tensorflow/tfjs');
 const config = require('config');
+const { ExpandDims } = require('@tensorflow/tfjs');
 
 //common members for create/update plans
     const categories = ['sleep', 'fitness', 'refreshment', 'work', 'chores', 'social', 'leisure', 'hobby', 'others', 'idle'];
@@ -19,7 +20,7 @@ const config = require('config');
     function validateInput(myRoutine){
         var flag = 0;
         myRoutine.forEach(p => {        
-            if(p.startTime == null || p.endTime == null || p.category == null || p.task == null){
+            if(p.startTimeH == null || p.startTimeM == null || p.endTimeH == null || p.endTimeM == null || p.category == null || p.task == null){
                 flag = 1;
             }
             if(p.priority == null){
@@ -34,25 +35,41 @@ const config = require('config');
 
     //func to prepare skeleton of plans
     function prepare(myRoutine){
-        var categorySlots = new Array(24).fill(-1);
-        var planIndices = new Array(24).fill(-1);
+        var categorySlots = new Array(288).fill(-1);
+        
         myRoutine.forEach(p =>{
-            for (let i = parseInt(p.startTime); i < parseInt(p.endTime); i++){
-                planIndices[i] = (myRoutine).indexOf(p);
-                categorySlots[i] = categories.indexOf(p.category);
+            var start = ((parseInt(p.startTimeH) * 12) + (parseInt(p.startTimeM) / 5));
+            var end   = ((parseInt(p.endTimeH) * 12) + (parseInt(p.endTimeM) / 5));
+            if(start == 287){
+                
+                categorySlots[287] = categories.indexOf(p.category);
+            }
+            else{
+                for (let i = start; i < end; i++){
+                    
+                    categorySlots[i] = categories.indexOf(p.category);
+                }
             }
         })
-        return {planIndices: planIndices, categorySlots: categorySlots}
+        
+        return categorySlots
     }
 
-    function findIdleHours(planIndices, myRoutine){
-        for(let i=0; i< planIndices.length; i++){
-            if(planIndices[i] == -1){
+    function findIdleTime(categorySlots, myRoutine){
+        for(let i=0; i< categorySlots.length; i++){
+            if(categorySlots[i] == -1){
                 index = i;
-                while(planIndices[index] == -1){
+                while(categorySlots[index] == -1){
                     index++;
                 }
-                myRoutine.push({startTime: i.toString(), endTime: index.toString(), category: "idle", task: "none", priority: "low", done: false});
+                var start = i;
+                var end = index;
+                var startTimeH = parseInt(start/12);
+                var startTimeM = (start - (startTimeH * 12)) * 5;
+                var endTimeH = parseInt(end/12);
+                var endTimeM = (end - (endTimeH * 12)) * 5;
+
+                myRoutine.push({startTimeH: startTimeH, startTimeM: startTimeM, endTimeH: endTimeH, endTimeM: endTimeM , category: "idle", task: "none", priority: "low", done: false});
                 i = index;
                 continue;
             }
@@ -68,7 +85,7 @@ const config = require('config');
         switch(category){
             case 'sleep': {
                 
-                sleep = countOccurrences(categorySlots, catNo); //default is replaced by users sleeping hrs
+                sleep = (countOccurrences(categorySlots, catNo) / 12).toFixed(1); //default is replaced by users sleeping hrs
                 sug += 'Consider sleeping for '+(7 - sleep)+' hours during the following intervals:';
                 
                 break;
@@ -84,7 +101,10 @@ const config = require('config');
         if((category == 'fitness' && !categorySlots.includes(catNo)) || (category == 'sleep' && sleep < 7))  {
             myRoutine.forEach(r => {
                 if(r.category == 'idle'){
-                    sug = sug.concat(' < ' + r.startTime + ':00 to ' + r.endTime + ':00 > ')
+                    var start = ((parseInt(r.startTimeH) * 12) + (parseInt(r.startTimeM) / 5));
+                    var end   = ((parseInt(r.endTimeH) * 12) + (parseInt(r.endTimeM) / 5));
+                    if(((end - start) * 6) >= 30)
+                        sug = sug.concat(' < ' + r.startTimeH + ':' + r.startTimeM + ' to ' + r.endTimeH + ':' + r.endTimeM + ' > ')
                 }
             })
             suggestions.push(sug);
@@ -116,6 +136,7 @@ const config = require('config');
 
 //create new planner
 //create new routine
+
 router.post('/', auth,
 async (req, res) => {
     
@@ -128,27 +149,22 @@ async (req, res) => {
 
     var myRoutine = req.body;
     
-    var skeleton = prepare(myRoutine);
-    var planIndices = skeleton.planIndices;
-    var categorySlots = skeleton.categorySlots;
-
-    myRoutine = findIdleHours(planIndices, myRoutine);
-
-    skeleton = prepare(myRoutine);
-    planIndices = skeleton.planIndices;
-    categorySlots = skeleton.categorySlots;
     
+    var categorySlots = prepare(myRoutine);
+    myRoutine = findIdleTime(categorySlots, myRoutine);
+
     
-    console.log(planIndices);
+    categorySlots = prepare(myRoutine);
+    
     console.log(categorySlots);
     
     suggestions = [];
     remarks(categorySlots, 'sleep', myRoutine);
     remarks(categorySlots, 'fitness', myRoutine);
 
-    refreshments(categorySlots.slice(0,12), 'morning')
-    refreshments(categorySlots.slice(11,18), 'afternoon/evening')
-    refreshments(categorySlots.slice(17), 'late-evening')
+    refreshments(categorySlots.slice(0,144), 'morning')
+    refreshments(categorySlots.slice(132,216), 'afternoon/evening')
+    refreshments(categorySlots.slice(204), 'late-evening')
     
     const cs = completionScore(myRoutine);
     
@@ -272,28 +288,21 @@ async (req, res) => {
     var myRoutine = req.body;
     try{
         
-    var skeleton = prepare(myRoutine);
-    var planIndices = skeleton.planIndices;
-    var categorySlots = skeleton.categorySlots;
+    var categorySlots = prepare(myRoutine);
+    myRoutine = findIdleTime(categorySlots, myRoutine);
 
-    myRoutine = findIdleHours(planIndices, myRoutine);
-
-    skeleton = prepare(myRoutine);
-    planIndices = skeleton.planIndices;
-    categorySlots = skeleton.categorySlots;
     
+    categorySlots = prepare(myRoutine);
     
-    console.log(planIndices);
     console.log(categorySlots);
-
     suggestions = [];
     remarks(categorySlots, 'sleep', myRoutine);
     remarks(categorySlots, 'fitness', myRoutine);    
     
 
-    refreshments(categorySlots.slice(0,12), 'morning')
-    refreshments(categorySlots.slice(11,18), 'afternoon/evening')
-    refreshments(categorySlots.slice(17), 'late-evening')
+    refreshments(categorySlots.slice(0,144), 'morning')
+    refreshments(categorySlots.slice(132,216), 'afternoon/evening')
+    refreshments(categorySlots.slice(204), 'late-evening')
     
     const cs = completionScore(myRoutine);
 
