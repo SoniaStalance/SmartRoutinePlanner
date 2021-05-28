@@ -47,6 +47,7 @@ router.post('/train_hobbies_model', async (req,res)=>{
                 }
             }
             
+            
             const inputTensor = tf.tensor2d(inputs, [inputs.length, inputs[0].length]);
             const outputTensor = tf.oneHot(tf.tensor1d(outputs, 'int32'), hobbyList.length);
             
@@ -62,7 +63,8 @@ router.post('/train_hobbies_model', async (req,res)=>{
             model.compile({loss: "categoricalCrossentropy", metrics: ['accuracy'], optimizer: tf.train.adam(0.01)});
             
             var acc;
-            
+            var prev = 0;
+            var c = 1;
             
             await model.fit(inputTensor, outputTensor, {
                 batchSize: 50,
@@ -70,10 +72,13 @@ router.post('/train_hobbies_model', async (req,res)=>{
                 callbacks:{
                     onEpochEnd: async(epoch, logs) =>{
                         acc = logs.acc
-                        if(acc >= 0.5){
+                        c = (parseInt(acc * 100) == prev) ? c+1 : 1
+                        prev = parseInt(acc*100)
+                        
+                        if(acc >= 0.5 || c >= 12){
                             model.stopTraining = true
                         }
-                        console.log("Epoch: " + epoch + " Loss: " + logs.loss + " Accuracy: " + logs.acc);
+                        console.log("Epoch: " + epoch + " Loss: " + (logs.loss).toFixed(2) + " Accuracy: " + (logs.acc*100).toFixed(2) +' c='+c);
                     }
                 }
               });
@@ -83,14 +88,33 @@ router.post('/train_hobbies_model', async (req,res)=>{
             
             const testVal = tf.tensor2d([age, status], [1, 2]);
 
-            const prediction = model.predict(testVal);
+            const prediction = model.predict(testVal);            
             
-            const ix1 = tf.argMax(prediction, axis=1).dataSync();
+            const values = prediction.dataSync();
+            const arr = Array.from(values);
+            const arrHobbies = hobbyList;
+            
+            //bubble sort to find the top three hobbies probablity
+            for(var i = 0; i < arr.length; i++){
+                for(var j = 0; j < ( arr.length - i -1 ); j++){
+                  if(arr[j] < arr[j+1]){
+                    var temp = arr[j]
+                    var temp2 = arrHobbies[j]
 
-            suggestedHobby = hobbyList[ix1];
-            console.log('Age : ' + age + ' Status : ' + statusList[status] + ' Hobby suggested : ' + suggestedHobby + ' with '+acc+'% accuracy');
+                    arr[j] = arr[j + 1]
+                    arrHobbies[j] = arrHobbies[j + 1]
+
+                    arr[j+1] = temp
+                    arrHobbies[j+1] = temp2
+                    }
+                }
+            }
             
-            return res.status(400).json({age: age, status: statusList[status], suggested: suggestedHobby, accuracy: acc});
+            var suggested = [arrHobbies[0], arrHobbies[1], arrHobbies[2]]
+            
+            console.log('Age : ' + age + ' Status : ' + statusList[status] + ' Hobbies suggested : ' + suggested + ' with '+acc+'% accuracy');
+            
+            return res.status(400).json({age: age, status: statusList[status], suggested: suggested, accuracy: acc});
     
         }catch(err){
         

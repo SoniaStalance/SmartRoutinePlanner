@@ -86,13 +86,13 @@ const { ExpandDims } = require('@tensorflow/tfjs');
             case 'sleep': {
                 
                 sleep = (countOccurrences(categorySlots, catNo) / 12).toFixed(1); //default is replaced by users sleeping hrs
-                sug += 'Consider sleeping for '+(7 - sleep)+' hours during the following intervals:';
+                sug += 'Consider sleeping for '+(7 - sleep).toFixed(1) +' hours during the following intervals:';
                 
                 break;
             }
             case 'fitness': {
                 
-                sug += 'Consider following a fitness routine for atleast 1 hour during the following intervals:';
+                sug += 'Consider following a fitness routine for atleast 1/2 an hour during the following intervals:';
                 
                 break;
             }
@@ -117,7 +117,7 @@ const { ExpandDims } = require('@tensorflow/tfjs');
             //console.log(categorySlots)
     }
 
-    function completionScore(myRoutine){
+    function completionScore(categorySlots, myRoutine){
         var TW = 0; //total weight
         var w = 0;  //weight completed
         myRoutine.forEach(r => {
@@ -127,8 +127,26 @@ const { ExpandDims } = require('@tensorflow/tfjs');
                 if(r.done == true){
                     w = (r.priority == 'low') ? (w+1) : (w+2);
                 }
+                console.log(w, TW)
             }
+            
         })
+        
+        
+        //reductions
+        var sleep = (countOccurrences(categorySlots, categories.indexOf('sleep')) / 12).toFixed(1);
+        if(!categorySlots.includes(categories.indexOf('sleep')))
+        {
+            w = w - 0.75; //because sleep is highly essential
+        }
+
+        if(!categorySlots.includes(categories.indexOf('refreshment')))
+        {
+            w = w - 0.75; //because refreshments(i.e. meals) are highly essential
+        }
+        console.log(w, TW)
+        
+        console.log((w/TW)*100)
         return (w/TW)*100;
     }
 
@@ -156,7 +174,7 @@ async (req, res) => {
     
     categorySlots = prepare(myRoutine);
     
-    console.log(categorySlots);
+    //console.log(categorySlots);
     
     suggestions = [];
     remarks(categorySlots, 'sleep', myRoutine);
@@ -166,7 +184,7 @@ async (req, res) => {
     refreshments(categorySlots.slice(132,216), 'afternoon/evening')
     refreshments(categorySlots.slice(204), 'late-evening')
     
-    const cs = completionScore(myRoutine);
+    const cs = completionScore(categorySlots ,myRoutine);
     
     const newRoutine = {
         plan: myRoutine,
@@ -294,7 +312,7 @@ async (req, res) => {
     
     categorySlots = prepare(myRoutine);
     
-    console.log(categorySlots);
+    //console.log(categorySlots);
     suggestions = [];
     remarks(categorySlots, 'sleep', myRoutine);
     remarks(categorySlots, 'fitness', myRoutine);    
@@ -304,7 +322,7 @@ async (req, res) => {
     refreshments(categorySlots.slice(132,216), 'afternoon/evening')
     refreshments(categorySlots.slice(204), 'late-evening')
     
-    const cs = completionScore(myRoutine);
+    const cs = completionScore(categorySlots ,myRoutine);
 
     const userPlanner = await Plan.findOne({user: req.user.id})
     userPlanner.routine.id(req.params.routine_id).plan = myRoutine
@@ -316,6 +334,22 @@ async (req, res) => {
     }catch(err){
             console.error(err.message);
             res.status(500).send('Server error');
+    }
+});
+
+//feedback to routine using routine obj id
+router.post('/feedback/:routine_id', auth, async (req,res)=>{
+    try{
+        const userPlanner = await Plan.findOne({user: req.user.id})
+        userPlanner.routine.id(req.params.routine_id).feedback = (req.body.feedback).toString();
+
+        await userPlanner.save();
+        return res.status(200).json({msg: 'Feedback submitted!'})
+        
+    }catch(err){
+        
+        console.log(err.msg);
+        res.status(500).send('Server error!');
     }
 });
 

@@ -21,6 +21,10 @@ const mongoose = require('mongoose');
                 score:  {
                             type: String,
                             default: "0"
+                },
+                feedback:  {
+                    type: String,
+                    default: "3"
                 }
             }
         ]
