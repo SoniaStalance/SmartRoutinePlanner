@@ -12,6 +12,7 @@
   "dependencies": {
     "@mapbox/node-pre-gyp": "^1.0.4",
     "@tensorflow/tfjs": "^3.6.0",
+    "@tensorflow/tfjs-node": "^3.6.1",
     "@tensorflow/tfjs-vis": "^1.5.1",
     "bcryptjs": "^2.4.3",
     "config": "^3.3.6",

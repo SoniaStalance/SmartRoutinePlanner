@@ -149,37 +149,5 @@ router.delete('/', auth, async(req, res)=>{
         res.status(500).send('Server Error');
     }
 });
-//-------------------------------------------------------------------------
 
-//suggest hobby for logged in user based on already saved model(not real-time though)
-//pending (don't bother)
-/*
-router.get('/suggest_hobbies', auth, async (req,res)=>{
-    try{
-        
-        const profile = await Profile.findOne({user: req.user.id}).populate('user', ['name', 'avatar']);
-        
-        if((profile.hobbies).length==0){
-            //load hobbies model
-            //predict
-            
-            const testVal = tf.tensor2d([53, 1], [1, 2]);
-
-            const prediction = model.predict(testVal);
-            console.log((prediction).print())
-
-            const ix = tf.argMax(prediction, axis=1).dataSync();
-            suggestedHobby = hobbyList[ix];
-            console.log('This user has no hobbies! Hobby suggested is ' + suggestedHobby );
-            
-            return res.status(400).json({msg: '[INCOMPLETE] This user has no hobbies!', suggested: 'suggestedHobby'});
-        }
-        res.json(profile.hobbies);
-    }catch(err){
-        
-        console.log(err.msg);
-        res.status(500).send('Server error!');
-    }
-});
-*/
 module.exports = router;

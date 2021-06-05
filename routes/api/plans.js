@@ -14,8 +14,28 @@ const { ExpandDims } = require('@tensorflow/tfjs');
     const categories = ['sleep', 'fitness', 'refreshment', 'work', 'chores', 'social', 'leisure', 'hobby', 'others', 'idle'];
     //                      0       1           2             3         4        5          6         7         8       9
     var suggestions = [];
-
+    const months = ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"]; 
     const countOccurrences = (arr, val) => arr.reduce((a, v) => (v === val ? a + 1 : a), 0); //func to find freq of values in an array
+
+    function getTodaysRoutine(userPlanner){
+        var flag = false
+        var today = new Date();
+        var todaysRoutine = {}
+        routine = userPlanner.routine;
+
+        routine.forEach(r => {
+            dt = (r.date).getDate();
+            mt = (r.date).getMonth();
+            yr = (r.date).getFullYear();
+
+            if(dt == today.getDate() && mt == today.getMonth() && yr == today.getFullYear()){
+                flag = true
+                todaysRoutine = r
+            }
+        })
+
+        return {flag: flag, todaysRoutine: todaysRoutine}
+    }
 
     function validateInput(myRoutine){
         var flag = 0;
@@ -127,7 +147,6 @@ const { ExpandDims } = require('@tensorflow/tfjs');
                 if(r.done == true){
                     w = (r.priority == 'low') ? (w+1) : (w+2);
                 }
-                console.log(w, TW)
             }
             
         })
@@ -144,9 +163,6 @@ const { ExpandDims } = require('@tensorflow/tfjs');
         {
             w = w - 0.75; //because refreshments(i.e. meals) are highly essential
         }
-        console.log(w, TW)
-        
-        console.log((w/TW)*100)
         return (w/TW)*100;
     }
 
@@ -210,21 +226,8 @@ async (req, res) => {
     else{
         //checking if today's routine already exists
         //if yes send error msg else save today's routine
-        flagC = 0;
-        today = new Date();
-        todaysRoutine = userPlanner.routine;
-
-        todaysRoutine.forEach(r => {
-            dt = (r.date).getDate();
-            mt = (r.date).getMonth();
-            yr = (r.date).getFullYear();
-
-            if(dt == today.getDate() && mt == today.getMonth() && yr == today.getFullYear()){
-                flagC = 1;
-            }
-        })
-        
-        if(flagC != 0){
+        var today = getTodaysRoutine(userPlanner).flag
+        if(today == true){
             return res.status(400).json({errors: 'Today\'s routine already exists'});
         }
         else{
@@ -263,7 +266,14 @@ router.get('/', auth, async (req,res)=>{
 //get daily routine by obj id
 router.get('/:routine_id', auth, async (req,res)=>{
     try{
-        const routineX = (await Plan.findOne({user: req.user.id})).routine.id(req.params.routine_id)
+        var routineX = {}
+        var userPlanner = await Plan.findOne({user: req.user.id})
+        if(req.params.routine_id == 'today'){
+            routineX = ((userPlanner.routine).slice(-1))[0]
+        }
+        else{
+            routineX = userPlanner.routine.id(req.params.routine_id)
+        }
         if(routineX)
             return res.json(routineX)
         else
@@ -328,12 +338,69 @@ async (req, res) => {
     userPlanner.routine.id(req.params.routine_id).plan = myRoutine
     userPlanner.routine.id(req.params.routine_id).remarks = suggestions
     userPlanner.routine.id(req.params.routine_id).score = cs
-    
+
     await userPlanner.save();
     res.json(userPlanner.routine.id(req.params.routine_id));
     }catch(err){
             console.error(err.message);
             res.status(500).send('Server error');
+    }
+});
+
+//rearrange today's routine
+router.get('/today/rearrange', auth, async (req,res)=>{
+    try{
+        const userPlanner = await Plan.findOne({user: req.user.id})
+        var obj = getTodaysRoutine(userPlanner)
+        var flag = obj.flag
+        if(flag == true){
+            var myRoutine = (obj.todaysRoutine).plan
+
+            var current = new Date()
+            var hr = current.getHours()
+            var min = Math.round(current.getMinutes())
+            
+            myRoutine.forEach(r => {
+                
+                if((r.category != 'idle') && (r.endTimeH <= hr) && (r.endTimeM < min) && (r.done == false))
+                {   
+                    var durationOfPendingTask = ((r.endTimeH * 12) + (r.endTimeM /5)) - ((r.startTimeH * 12) + (r.startTimeM /5)) //calculated in slots
+                    pendingCategory = r.category
+                    pendingTask = r.task
+                    pendingPriority = r.priority
+
+                    var r_index = myRoutine.indexOf(r)
+                    var i = r_index + 1
+                    var replaced = false
+                    while(i < myRoutine.length && replaced == false){
+                        if(myRoutine[i].category == 'idle' && (((myRoutine[i].startTimeH == hr) && (myRoutine[i].startTimeM >= min)) || (myRoutine[i].startTimeH > hr)) ){
+                            var durationOfIdleTask = ((r.endTimeH * 12) + (r.endTimeM /5)) - ((r.startTimeH * 12) + (r.startTimeM /5)) //calculated in slots
+                            if(durationOfIdleTask >= (durationOfPendingTask - 15)){
+                                myRoutine[i].category = pendingCategory
+                                myRoutine[i].task = pendingTask
+                                myRoutine[i].priority = pendingPriority
+                                myRoutine[i].done = false
+                                replaced = true
+                            }
+                        }
+                        i++;
+                    }
+                    if(replaced == true){
+                        myRoutine[r_index].category = 'idle'
+                        myRoutine[r_index].task = 'none'
+                        myRoutine[r_index].priority = 'low'
+                        myRoutine[r_index].done = false
+                    }
+                }
+            })
+            return res.json(myRoutine)
+        }
+        else{
+            return res.status(400).json({msg: 'You have not created any plans for today. Kindly do so.'})
+        }
+    }catch(err){
+        console.log(err.msg);
+        res.status(500).send('Server error!');
     }
 });
 
@@ -345,6 +412,80 @@ router.post('/feedback/:routine_id', auth, async (req,res)=>{
 
         await userPlanner.save();
         return res.status(200).json({msg: 'Feedback submitted!'})
+        
+    }catch(err){
+        
+        console.log(err.msg);
+        res.status(500).send('Server error!');
+    }
+});
+
+//get stats for the last week (i.e. last 7 days) or for required month
+router.get('/stats/:statsRequired', auth, async (req,res)=>{
+    try{
+        const routine = (await Plan.findOne({user: req.user.id})).routine
+        if(!routine){
+            return res.status(400).json({msg: 'Routine does not exist'})
+        }
+        else{
+            var statsRequired = (req.params.statsRequired).toLowerCase()
+            if(statsRequired == 'week'){
+                if(routine.length >= 7){
+                    var week = []
+    
+                    var c = 0;
+                    var i = routine.length -1
+                    while(c < 7 && i >= 0){
+                        var r = routine[i]
+                        var dt = (r.date).getDate() + '/' + ((r.date).getMonth() + 1) + '/' + ((r.date).getFullYear())
+                        var score = parseFloat(r.score)
+                        week.push([dt, score])
+                        i--
+                        c++
+                    }
+                    
+                    return res.json(week)
+                }
+                else{
+                    return res.status(400).json({msg: 'Insufficient data'})
+                }
+            }
+            else{
+                if(months.includes(statsRequired)){
+                    var flag = false
+                    var m = months.indexOf(statsRequired)
+                    var y = 0
+                    var i = routine.length -1
+                    //get the most recent year associated with the month requested
+                    while(flag == false && i >= 0){
+                        var r = routine[i]
+                        if((r.date).getMonth() == m){
+                            y = (r.date).getFullYear()
+                            flag = true
+                        }
+                        i--;
+                    }
+
+                    if(flag == true){
+                        var month = []
+                        for(let i = 0; i < routine.length; i++){
+                            var dt = routine[i].date
+                            if(dt.getMonth() == m && dt.getFullYear() == y){
+                                month.push([dt.getDate(), parseFloat(routine[i].score)])
+                            }
+                        }
+
+                        return res.json(month)
+                    }
+                    else{
+                        return res.status(400).json({msg: 'Stats for '+months[m]+' does not exist'})
+                    }
+                }
+                else{
+                    return res.status(400).json({msg: 'Invalid parameter'})
+                }
+            }
+        }
         
     }catch(err){
         
