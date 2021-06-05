@@ -10,7 +10,8 @@ const mongoose = require('mongoose');
             required: true
         },
         occupation: {
-            type: String
+            type: String,
+            default: 'others'
         },
         status: {
             type: String,

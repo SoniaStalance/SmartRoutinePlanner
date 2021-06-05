@@ -8,7 +8,7 @@ the dataset shown below has 2016 entries corresponding to the 7 days mentioned a
 
 NOTE: Datasets are generated in real-time (i.e. on demand here, whenever user plan has to be pedicted)
       The datasets shown here are:
-      i) 75% accurate for category prediction and (we can get upto 80% but it takes atleast 5-10 minutes, whereas for 75% accuracy it takes only 3-5 minutes)
+      i) 78% accurate for category prediction and (we can get upto 85% but it takes atleast 10+ minutes, whereas for 78% accuracy it takes only 5-10 minutes)
       ii) 93% accurate for task prediction
 ------------------------------------------------------------------------------------------------
 lets consider dataset1 as the dataset for model1:

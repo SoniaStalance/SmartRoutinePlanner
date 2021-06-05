@@ -3,7 +3,6 @@ const router = express.Router();
 const auth = require('../../middleware/auth');
 const Profile = require('../../models/Profile');
 const tf = require('@tensorflow/tfjs');
-
 const dataset = require('../../data/userdata');
 const { distinct } = require('../../models/Profile');
 
@@ -11,8 +10,6 @@ const { distinct } = require('../../models/Profile');
 const categories = ['sleep', 'fitness', 'refreshment', 'work', 'chores', 'social', 'leisure', 'hobby', 'others', 'idle'];
 //                      0       1           2             3         4        5          6         7         8       9
 const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
-
-const countOccurrences = (arr, val) => arr.reduce((a, v) => (v === val ? a + 1 : a), 0); //func to find freq of values in an array
 
 //finds the count of idle and essential categories
 function idleANDessentials(myRoutine){
@@ -271,7 +268,7 @@ router.get('/plans', auth, async(req, res)=>{
                 
                 await model.fit(inputTensor, targetTensor, {
                     batchSize: 10,
-                    epochs: 350,
+                    epochs: 200,
                     callbacks:{
                         onEpochEnd: async(epoch, logs) =>{
                             acc = logs.acc
@@ -397,7 +394,7 @@ router.get('/plans', auth, async(req, res)=>{
 
                 var validPlan = validatePredictedPlan(category, task)
 
-                return res.json({plan: validPlan, accuracy: acc})
+                return res.json({plan: validPlan, accuracy: (acc*0.9)+(acc2*1.0)})
             }
         }
     } catch (err) {
@@ -411,8 +408,11 @@ POST api/predict/hobbies
 */
 router.get('/hobbies', auth, async (req,res)=>{
     try{
-            const hobbyList =  ['baking', 'writing','singing', 'cricket', 'coding', 'dancing', 'tennis', 'painting', 'sewing','reading','knitting', 'movies', 'gaming','cooking','football','travel','photographgy', 'listening_music', 'playing_musical_instruments','gardening','blogging','indoor_games','social_service','shopping'];
             const statusList = ['unmarried', 'married', 'divorced', 'widowed'];
+            const occupationList = ['student', 'home-maker', 'working professional', 'retired', 'others'] //will use this later if needed :(
+
+            const hobbyList =  ['pet keeping', 'martial arts','singing/music', 'outdoor games', 'programing', 'performing arts', 'board games', 'creative arts', 'collecting','reading/writing','sewing/knitting/embroidery', 'watching movies', 'gaming','culinary','sports','travelling','photographgy', 'DIY', 'foreign languages','gardening','blogging','indoor games','volunteering','shopping'];
+            
 
             const myProfile = await Profile.findOne({user: req.user.id});
             if(!myProfile){
@@ -427,10 +427,11 @@ router.get('/hobbies', auth, async (req,res)=>{
             var allhobbies = [];
 
             p.forEach(([key, value]) => {
-                if((value.hobbies).length>0)
+                var a = parseInt(value.age)
+                if((value.hobbies).length>0 && (a >= age-5 && a<= age+5))
                 {
                     (value.hobbies).forEach(hob => {
-                        allhobbies.push({age: parseInt(value.age), status: statusList.indexOf(value.status), hobby: hobbyList.indexOf(hob)});
+                        allhobbies.push({age: a, status: statusList.indexOf(value.status), hobby: hobbyList.indexOf(hob)});
                     })
                 }
             });
@@ -444,8 +445,11 @@ router.get('/hobbies', auth, async (req,res)=>{
             
             for(let cat = 0; cat < dataset.length; cat++) {
                 for(let ent = 0; ent < dataset[cat].length; ent++) {
-                    inputs.push([dataset[cat][ent][0], dataset[cat][ent][1]])
-                    outputs.push(dataset[cat][ent][2])
+                    var a=dataset[cat][ent][0]
+                    if(a >= age-5 && a<= age+5){
+                        inputs.push([a, dataset[cat][ent][1]])
+                        outputs.push(dataset[cat][ent][2])
+                    }
                 }
             }
             
@@ -456,10 +460,10 @@ router.get('/hobbies', auth, async (req,res)=>{
 
             const model = tf.sequential(); 
             
-            model.add(tf.layers.dense({inputShape: [2], units: parseInt(hobbyList.length * 2), useBias: true, activation: 'mish'}));
-            model.add(tf.layers.dense({units: parseInt(hobbyList.length * 2), useBias: true, activation: 'mish'}));
-            model.add(tf.layers.dense({units: parseInt(hobbyList.length * 1.5), useBias: true, activation: 'mish'}));
-            model.add(tf.layers.dense({units: parseInt(hobbyList.length * 1.5), useBias: true, activation: 'softplus'}));
+            model.add(tf.layers.dense({inputShape: [2], units: parseInt(hobbyList.length * 1.8), useBias: true, activation: 'mish'}));
+            model.add(tf.layers.dense({units: parseInt(hobbyList.length * 1.8), useBias: true, activation: 'mish'}));
+            model.add(tf.layers.dense({units: parseInt(hobbyList.length * 1.4), useBias: true, activation: 'mish'}));
+            model.add(tf.layers.dense({units: parseInt(hobbyList.length * 1.4), useBias: true, activation: 'softplus'}));
             model.add(tf.layers.dense({units: hobbyList.length, useBias: true, activation: 'softmax'}));
             
             model.compile({loss: "categoricalCrossentropy", metrics: ['accuracy'], optimizer: tf.train.adam(0.01)});
@@ -470,14 +474,14 @@ router.get('/hobbies', auth, async (req,res)=>{
             
             await model.fit(inputTensor, targetTensor, {
                 batchSize: 10,
-                epochs: 350,
+                epochs: 450,
                 callbacks:{
                     onEpochEnd: async(epoch, logs) =>{
                         acc = logs.acc
                         c = (parseInt(acc * 100) == prev) ? c+1 : 1
                         prev = parseInt(acc*100)
                         
-                        if(acc >= 0.5 || c >= 12){
+                        if(logs.loss <= 1.3 ||acc >= 0.45 || c >= 12){
                             model.stopTraining = true
                         }
                         console.log("Epoch: " + epoch + " Loss: " + (logs.loss).toFixed(2) + " Accuracy: " + (logs.acc*100).toFixed(2) +' c='+c);
