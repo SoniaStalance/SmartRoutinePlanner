@@ -17,10 +17,10 @@ const { ExpandDims } = require('@tensorflow/tfjs');
     const months = ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"]; 
     const countOccurrences = (arr, val) => arr.reduce((a, v) => (v === val ? a + 1 : a), 0); //func to find freq of values in an array
 
-    function getTodaysRoutine(userPlanner){
+    function getRoutineByDate(userPlanner, reqDate = new Date()){
         var flag = false
-        var today = new Date();
-        var todaysRoutine = {}
+        
+        var routineX = {}
         routine = userPlanner.routine;
 
         routine.forEach(r => {
@@ -28,13 +28,13 @@ const { ExpandDims } = require('@tensorflow/tfjs');
             mt = (r.date).getMonth();
             yr = (r.date).getFullYear();
 
-            if(dt == today.getDate() && mt == today.getMonth() && yr == today.getFullYear()){
+            if(dt == reqDate.getDate() && mt == reqDate.getMonth() && yr == reqDate.getFullYear()){
                 flag = true
-                todaysRoutine = r
+                routineX = r
             }
         })
 
-        return {flag: flag, todaysRoutine: todaysRoutine}
+        return {flag: flag, routineX: routineX}
     }
 
     function validateInput(myRoutine){
@@ -226,12 +226,17 @@ async (req, res) => {
     else{
         //checking if today's routine already exists
         //if yes send error msg else save today's routine
-        var today = getTodaysRoutine(userPlanner).flag
+        var today = getRoutineByDate(userPlanner).flag
         if(today == true){
             return res.status(400).json({errors: 'Today\'s routine already exists'});
         }
         else{
             try{
+            if((userPlanner.routine).length > 365){
+                //removes the first plan from top
+                userPlanner.routine.shift();
+            }
+
             userPlanner.routine.push(newRoutine);
             await userPlanner.save();
             res.json((userPlanner.routine).slice(-1));
@@ -244,41 +249,24 @@ async (req, res) => {
     }
 });
 
-//get user's entire planner
+//get plan by date
 router.get('/', auth, async (req,res)=>{
     try{
-        
+        var dt = new Date((req.body).date)
+        console.log(dt)
         const userPlanner = await Plan.findOne({user: req.user.id})
         
         if(!userPlanner){
             
             return res.status(400).json({msg: 'There is no planner for this user. Kindly create one.'});
         }
-        
-        res.json(userPlanner.routine);
-    }catch(err){
-        
-        console.log(err.msg);
-        res.status(500).send('Server error!');
-    }
-});
 
-//get daily routine by obj id
-router.get('/:routine_id', auth, async (req,res)=>{
-    try{
-        var routineX = {}
-        var userPlanner = await Plan.findOne({user: req.user.id})
-        if(req.params.routine_id == 'today'){
-            routineX = ((userPlanner.routine).slice(-1))[0]
-        }
-        else{
-            routineX = userPlanner.routine.id(req.params.routine_id)
-        }
-        if(routineX)
-            return res.json(routineX)
+        var obj = getRoutineByDate(userPlanner, dt)
+        if(obj.flag == true)
+            res.json(obj.routineX);
         else
-            return res.status(400).json({msg: 'Routine does not exist'})
-        
+            return res.status(400).json({msg: 'Plan not found!'});
+
     }catch(err){
         
         console.log(err.msg);
@@ -287,7 +275,7 @@ router.get('/:routine_id', auth, async (req,res)=>{
 });
 
 //delete routine obj by id
-router.delete('/:routine_id', auth, async (req,res)=>{
+router.delete('/delete/:routine_id', auth, async (req,res)=>{
     try{
         const userPlanner = await Plan.findOne({user: req.user.id})
         userPlanner.routine.id(req.params.routine_id).remove(); 
@@ -303,7 +291,7 @@ router.delete('/:routine_id', auth, async (req,res)=>{
 });
 
 //update routine plan, score, remarks by routine obj id
-router.post('/:routine_id', auth,
+router.post('/update/:routine_id', auth,
 async (req, res) => {
     
     //checking if all fields are filled
@@ -348,13 +336,14 @@ async (req, res) => {
 });
 
 //rearrange today's routine
-router.get('/today/rearrange', auth, async (req,res)=>{
+router.get('/rearrange', auth, async (req,res)=>{
     try{
         const userPlanner = await Plan.findOne({user: req.user.id})
-        var obj = getTodaysRoutine(userPlanner)
+        var obj = getRoutineByDate(userPlanner)
+        
         var flag = obj.flag
         if(flag == true){
-            var myRoutine = (obj.todaysRoutine).plan
+            var myRoutine = (obj.routineX).plan
 
             var current = new Date()
             var hr = current.getHours()
@@ -393,25 +382,41 @@ router.get('/today/rearrange', auth, async (req,res)=>{
                     }
                 }
             })
-            return res.json(myRoutine)
+            var result = obj.routineX
+            result.plan = myRoutine
+            return res.json(result)
         }
         else{
             return res.status(400).json({msg: 'You have not created any plans for today. Kindly do so.'})
         }
     }catch(err){
-        console.log(err.msg);
+        
         res.status(500).send('Server error!');
     }
 });
 
-//feedback to routine using routine obj id
-router.post('/feedback/:routine_id', auth, async (req,res)=>{
+//feedback to routine using date
+router.post('/feedback', auth, async (req,res)=>{
     try{
+        var dt = new Date((req.body).date)
         const userPlanner = await Plan.findOne({user: req.user.id})
-        userPlanner.routine.id(req.params.routine_id).feedback = (req.body.feedback).toString();
-
-        await userPlanner.save();
-        return res.status(200).json({msg: 'Feedback submitted!'})
+        if(userPlanner)
+        {
+            var obj = getRoutineByDate(userPlanner, dt)
+            var flag = obj.flag
+            if(flag == true){
+                userPlanner.routine.id(obj.routineX._id).feedback = (req.body.feedback).toString();
+                await userPlanner.save();
+                return res.status(200).json({msg: 'Feedback submitted!'})
+            }
+            else{
+                return res.status(400).json({msg: 'Plan not found'})
+            }
+        }else{
+            return res.status(400).json({msg: 'There is no planner for this user'})
+        }
+        
+        
         
     }catch(err){
         
