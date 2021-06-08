@@ -411,7 +411,7 @@ router.get('/hobbies', auth, async (req,res)=>{
             const statusList = ['unmarried', 'married', 'divorced', 'widowed'];
             const occupationList = ['student', 'home-maker', 'working professional', 'retired', 'others'] //will use this later if needed :(
 
-            const hobbyList =  ['pet keeping', 'martial arts','singing/music', 'outdoor games', 'programing', 'performing arts', 'board games', 'creative arts', 'collecting','reading/writing','sewing/knitting/embroidery', 'watching movies', 'gaming','culinary','sports','travelling','photographgy', 'DIY', 'foreign languages','gardening','blogging','indoor games','volunteering','shopping'];
+            const hobbyList =  ['pet keeping', 'martial arts','singing/music', 'outdoor games', 'programing', 'performing arts', 'board games', 'creative arts', 'collecting','reading/writing','sewing/knitting/embroidery', 'watching movies', 'gaming','culinary','sports','travelling','photography', 'DIY', 'foreign languages','gardening','blogging','indoor games','volunteering','shopping'];
             
 
             const myProfile = await Profile.findOne({user: req.user.id});
