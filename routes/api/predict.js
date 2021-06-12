@@ -372,9 +372,9 @@ router.get('/plans', auth, async(req, res)=>{
                         const prediction = model2.predict(testVal);        
                         taskPredicted = distinctTasks[tf.argMax(prediction, axis=1).dataSync()];
                         count++;
-                    }while(((tasksInACategory[category[t]]).includes(taskPredicted)) == false  && count < 100)
+                    }while(((tasksInACategory[category[t]]).includes(taskPredicted)) == false  && count < 20)
 
-                    if(count == 100){
+                    if(count == 20){
                         taskPredicted = categories[category[t]]; //default if nothing can be predicted for time slot t
                     }
                     
@@ -394,7 +394,7 @@ router.get('/plans', auth, async(req, res)=>{
 
                 var validPlan = validatePredictedPlan(category, task)
 
-                return res.json({plan: validPlan, accuracy: (acc*0.9)+(acc2*1.0)})
+                return res.json({plan: validPlan, accuracy: (acc*0.9)+(acc2*0.1)})
             }
         }
     } catch (err) {
@@ -420,6 +420,7 @@ router.get('/hobbies', auth, async (req,res)=>{
             }
             var age = parseInt(myProfile.age)
             var status = statusList.indexOf(myProfile.status)
+            var myHobbies = myProfile.hobbies
 
             const allprofiles = await Profile.find();
             p = Object.entries(allprofiles)
@@ -481,7 +482,7 @@ router.get('/hobbies', auth, async (req,res)=>{
                         c = (parseInt(acc * 100) == prev) ? c+1 : 1
                         prev = parseInt(acc*100)
                         
-                        if(logs.loss <= 1.3 ||acc >= 0.45 || c >= 12){
+                        if(logs.loss <= 1.4 ||acc >= 0.45 || c >= 12){
                             model.stopTraining = true
                         }
                         console.log("Epoch: " + epoch + " Loss: " + (logs.loss).toFixed(2) + " Accuracy: " + (logs.acc*100).toFixed(2) +' c='+c);
@@ -497,10 +498,11 @@ router.get('/hobbies', auth, async (req,res)=>{
             const prediction = model.predict(testVal);            
             
             const values = prediction.dataSync();
-            const arr = Array.from(values);
-            const arrHobbies = hobbyList;
+            const arrHobbies = hobbyList;  //hobbies
+            const arr = Array.from(values);//their respective probablities
             
-            //bubble sort to find the top three hobbies probablity
+            
+            //bubble sort to find the top three hobbies with highest probabilities
             for(var i = 0; i < arr.length; i++){
                 for(var j = 0; j < ( arr.length - i -1 ); j++){
                   if(arr[j] < arr[j+1]){
@@ -515,13 +517,24 @@ router.get('/hobbies', auth, async (req,res)=>{
                     }
                 }
             }
+            console.log(myHobbies)
+            console.log('-------------------')
+            var suggested = [];
+            var count = 0;
+            for(let i=0; i<arrHobbies.length; i++){
+                if(!(myHobbies.includes(arrHobbies[i])) && count < 3)
+                {
+                    suggested.push(arrHobbies[i])
+                    count ++;
+                }
+            }
             
-            var suggested = [arrHobbies[0], arrHobbies[1], arrHobbies[2]]
             
             console.log('Age : ' + age + ' Status : ' + statusList[status] + ' Hobbies suggested : ' + suggested + ' with '+acc+'% accuracy');
             
-            return res.json({age: age, status: statusList[status], suggested: suggested, accuracy: acc});
-    
+            return res.json({age: age, status: statusList[status], hobbies: myHobbies, suggested: suggested, accuracy: acc});
+            
+           
         }catch(err){
         
         console.log(err.msg);
