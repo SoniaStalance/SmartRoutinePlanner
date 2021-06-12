@@ -14,8 +14,7 @@ const express = require('express');
     [
         check('name','Name is required').not().isEmpty(),
         check('email','Enter vaild email').isEmail(),
-        check('password','Min password length is 6').isLength({min: 6}),
-        check('dupliPassword','Min password length is 6').isLength({min: 6})
+        check('password','Min password length is 6').isLength({min: 6})
     ],
     async (req,res)=>{
         const errors = validationResult(req);
@@ -54,29 +53,25 @@ const express = require('express');
             console.log(userFields.admin)
         
             user = new User(userFields);
-            if(password == dupliPassword)
-            {
-                const salt = await bcrypt.genSalt(10);
-                user.password = await bcrypt.hash(password, salt);
+            
+            const salt = await bcrypt.genSalt(10);
+            user.password = await bcrypt.hash(password, salt);
 
-                await user.save();
+            await user.save();
 
-                //return jsonwebtoken
-                const payload = {
-                    user:{
-                        id: user.id
-                    }
+            //return jsonwebtoken
+            const payload = {
+                user:{
+                    id: user.id
                 }
+            }
 
-                jwt.sign(payload, config.get('jwtSecret'), {expiresIn: 360000},
-                (err, token) => {
-                    if(err) throw err;
-                    res.json({token})
-                });
-            }
-            else{
-                return res.json('Passwords do not match!')
-            }
+            jwt.sign(payload, config.get('jwtSecret'), {expiresIn: 360000},
+            (err, token) => {
+                if(err) throw err;
+                res.json({token})
+            });
+            
 
         }catch(err){
             console.log(err.message);
