@@ -36,8 +36,7 @@ private
 */
 router.post('/', [auth, [
     check('age','age is required').not().isEmpty(),
-    check('status','status is required').not().isEmpty(),
-    check('pincode','pincode is required').not().isEmpty()
+    check('status','status is required').not().isEmpty()
     
 
 ]], async (req,res)=>{
@@ -51,7 +50,7 @@ router.post('/', [auth, [
         occupation,
         status,
         hobbies,
-        pincode
+        city
     } = req.body;
 
     //build profile object
@@ -59,7 +58,7 @@ router.post('/', [auth, [
     profileFields.user = req.user.id;
     profileFields.age = age;
     profileFields.status = status;
-    profileFields.pincode = pincode;
+    if (city) profileFields.city = city;
     if (occupation) profileFields.occupation = occupation;
 
     if(hobbies){

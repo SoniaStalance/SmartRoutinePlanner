@@ -4,6 +4,7 @@ const auth = require('../../middleware/auth');
 const Profile = require('../../models/Profile');
 const tf = require('@tensorflow/tfjs');
 const dataset = require('../../data/userdata');
+const cities = require('../../data/cities');
 const { distinct } = require('../../models/Profile');
 
 //common members for create/update plans
@@ -421,7 +422,8 @@ router.get('/hobbies', auth, async (req,res)=>{
             var age = parseInt(myProfile.age)
             var status = statusList.indexOf(myProfile.status)
             var myHobbies = myProfile.hobbies
-
+            var occupation = occupationList.indexOf(myProfile.occupation)
+            
             const allprofiles = await Profile.find();
             p = Object.entries(allprofiles)
 
@@ -432,36 +434,57 @@ router.get('/hobbies', auth, async (req,res)=>{
                 if((value.hobbies).length>0 && (a >= age-5 && a<= age+5))
                 {
                     (value.hobbies).forEach(hob => {
-                        allhobbies.push({age: a, status: statusList.indexOf(value.status), hobby: hobbyList.indexOf(hob)});
+                        allhobbies.push({age: a, status: statusList.indexOf(value.status), hobby: hobbyList.indexOf(hob), occupation: occupationList.indexOf(value.occupation), city: cities.indexOf(value.city)});
                     })
                 }
             });
             
             var inputs = []
             var outputs = []
+            var testArray = []
 
-            inputs = allhobbies.map(d => [d.age, d.status])
-            outputs = allhobbies.map(d => d.hobby);
-
-            
-            for(let cat = 0; cat < dataset.length; cat++) {
-                for(let ent = 0; ent < dataset[cat].length; ent++) {
-                    var a=dataset[cat][ent][0]
-                    if(a >= age-5 && a<= age+5){
-                        inputs.push([a, dataset[cat][ent][1]])
-                        outputs.push(dataset[cat][ent][2])
+            if(myProfile.city && req.body.region == true){
+                
+                inputs = allhobbies.map(d => [d.age, d.status, d.occupation, d.city])
+                outputs = allhobbies.map(d => d.hobby);
+                
+                dataset.forEach(blk=>{
+                    for(let i = 0; i< blk.length; i++){
+                        var a = blk[i][0]
+                        if(a >= age-5 && a<= age+5){
+                            inputs.push([a, blk[i][1], blk[i][3], cities.indexOf(blk[i][4])])//age, status, occupation, city
+                            outputs.push(blk[i][2])//hobby
+                            console.log(a, blk[i][1], blk[i][3], cities.indexOf(blk[i][4]))
+                        }
                     }
-                }
+                })
+                
+                testArray = [age, status, occupation, cities.indexOf(myProfile.city)]
+
+            }else{
+                inputs = allhobbies.map(d => [d.age, d.status, d.occupation])
+                outputs = allhobbies.map(d => d.hobby);
+    
+                dataset.forEach(blk=>{
+                    for(let i = 0; i< blk.length; i++){
+                        var a = blk[i][0]
+                        if(a >= age-5 && a<= age+5){
+                            inputs.push([a, blk[i][1], blk[i][3]])//age, status, occupation
+                            outputs.push(blk[i][2])//hobby
+                            console.log(a, blk[i][1], blk[i][3])
+                        }
+                    }
+                })
+                
+                testArray = [age, status, occupation]
             }
-            
+            console.log('test :',testArray )
             
             const inputTensor = tf.tensor2d(inputs, [inputs.length, inputs[0].length]);
             const targetTensor = tf.oneHot(tf.tensor1d(outputs, 'int32'), hobbyList.length);
             
-
             const model = tf.sequential(); 
-            
-            model.add(tf.layers.dense({inputShape: [2], units: parseInt(hobbyList.length * 1.8), useBias: true, activation: 'mish'}));
+            model.add(tf.layers.dense({inputShape: [inputs[0].length], units: parseInt(hobbyList.length * 1.8), useBias: true, activation: 'mish'}));
             model.add(tf.layers.dense({units: parseInt(hobbyList.length * 1.8), useBias: true, activation: 'mish'}));
             model.add(tf.layers.dense({units: parseInt(hobbyList.length * 1.4), useBias: true, activation: 'mish'}));
             model.add(tf.layers.dense({units: parseInt(hobbyList.length * 1.4), useBias: true, activation: 'softplus'}));
@@ -475,14 +498,14 @@ router.get('/hobbies', auth, async (req,res)=>{
             
             await model.fit(inputTensor, targetTensor, {
                 batchSize: 10,
-                epochs: 450,
+                epochs: 500,
                 callbacks:{
                     onEpochEnd: async(epoch, logs) =>{
                         acc = logs.acc
                         c = (parseInt(acc * 100) == prev) ? c+1 : 1
                         prev = parseInt(acc*100)
                         
-                        if(logs.loss <= 1.4 ||acc >= 0.45 || c >= 12){
+                        if(logs.loss < 1 ||acc >= 0.58 || c >= 12){
                             model.stopTraining = true
                         }
                         console.log("Epoch: " + epoch + " Loss: " + (logs.loss).toFixed(2) + " Accuracy: " + (logs.acc*100).toFixed(2) +' c='+c);
@@ -492,8 +515,9 @@ router.get('/hobbies', auth, async (req,res)=>{
         
             acc = acc * 100  
             console.log('Accuracy='+ (acc)+'%')
-            
-            const testVal = tf.tensor2d([age, status], [1, 2]);
+                
+
+            const testVal = tf.tensor2d(testArray, [1, testArray.length]);
 
             const prediction = model.predict(testVal);            
             
@@ -517,8 +541,7 @@ router.get('/hobbies', auth, async (req,res)=>{
                     }
                 }
             }
-            console.log(myHobbies)
-            console.log('-------------------')
+            
             var suggested = [];
             var count = 0;
             for(let i=0; i<arrHobbies.length; i++){
@@ -530,9 +553,19 @@ router.get('/hobbies', auth, async (req,res)=>{
             }
             
             
-            console.log('Age : ' + age + ' Status : ' + statusList[status] + ' Hobbies suggested : ' + suggested + ' with '+acc+'% accuracy');
+            var result = {
+                age: age, 
+                status: statusList[status], 
+                occupation: occupationList[occupation],
+                hobbies: myHobbies, 
+                suggested: suggested, 
+                accuracy: acc
+            }
+            if(myProfile.city && req.body.region == true){
+                result.city = myProfile.city
+            }
             
-            return res.json({age: age, status: statusList[status], hobbies: myHobbies, suggested: suggested, accuracy: acc});
+            return res.json(result);
             
            
         }catch(err){
