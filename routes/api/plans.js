@@ -252,7 +252,7 @@ async (req, res) => {
 //get plan by date
 router.get('/', auth, async (req,res)=>{
     try{
-        var dt = new Date((req.body).date)
+        var dt = new Date((req.query).date)
         console.log(dt)
         const userPlanner = await Plan.findOne({user: req.user.id})
         

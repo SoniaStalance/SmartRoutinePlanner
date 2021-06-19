@@ -199,8 +199,8 @@ router.get('/plans', auth, async(req, res)=>{
             else
             {
                 var reqAcc = 0.7800
-                if(req.body.reqAcc){
-                    if(req.body.reqAcc == 'high'){
+                if(req.query.reqAcc){
+                    if(req.query.reqAcc == 'high'){
                         reqAcc = 0.8555
                     }
                 }
@@ -442,8 +442,8 @@ router.get('/hobbies', auth, async (req,res)=>{
             var inputs = []
             var outputs = []
             var testArray = []
-
-            if(myProfile.city && req.body.region == true){
+            
+            if(myProfile.city && req.query.region == 'true'){
                 
                 inputs = allhobbies.map(d => [d.age, d.status, d.occupation, d.city])
                 outputs = allhobbies.map(d => d.hobby);
@@ -561,7 +561,7 @@ router.get('/hobbies', auth, async (req,res)=>{
                 suggested: suggested, 
                 accuracy: acc
             }
-            if(myProfile.city && req.body.region == true){
+            if(myProfile.city && req.query.region == 'true'){
                 result.city = myProfile.city
             }
             
