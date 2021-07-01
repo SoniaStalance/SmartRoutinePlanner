@@ -60,6 +60,11 @@ function validatePredictedPlan(category, task){
             category[t] = categories.indexOf('refreshment')
             task[t] = 'breakfast'
             morning++
+            if(category[t+1]==categories.indexOf('idle')){
+                category[t+1] = categories.indexOf('refreshment')
+                task[t+1] = 'breakfast'
+                morning++
+            }
         }
         t++
     }
@@ -71,6 +76,11 @@ function validatePredictedPlan(category, task){
             category[t] = categories.indexOf('refreshment')
             task[t] = 'lunch'
             noon++
+            if(category[t+1]==categories.indexOf('idle')){
+                category[t+1] = categories.indexOf('refreshment')
+                task[t+1] = 'lunch'
+                noon++
+            }
         }
         t++
     }
@@ -82,6 +92,11 @@ function validatePredictedPlan(category, task){
             category[t] = categories.indexOf('refreshment')
             task[t] = 'dinner'
             evening++
+            if(category[t+1]==categories.indexOf('idle')){
+                category[t+1] = categories.indexOf('refreshment')
+                task[t+1] = 'dinner'
+                evening++
+            }
         }
         t++
     }
@@ -402,8 +417,6 @@ router.get('/plans', auth, async(req, res)=>{
                     dataset1.push([days[features1[i][0]],(parseInt(features1[i][1]/12)+':'+((features1[i][1]-(parseInt(features1[i][1]/12)*12))*5)).toString(),categories[target1[i]]])
                     dataset2.push([days[features2[i][0]],(parseInt(features2[i][1]/12)+':'+((features2[i][1]-(parseInt(features2[i][1]/12)*12))*5)).toString(),categories[features2[i][2]],target2[i]])
                 }
-
-                //var predictedPlan = structureValidatedPlan(category, task)
 
                 var validatedPlan = validatePredictedPlan(category, task)
                 category = validatedPlan.category

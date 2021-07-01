@@ -167,7 +167,85 @@ const { ExpandDims } = require('@tensorflow/tfjs');
     }
 
 //common members for create/update plans ends here------------
-
+//rearrange today's plans
+function rearrangePlans(myRoutine, priority_val){
+    var current = new Date()
+    var hr = current.getHours()
+    var min = Math.round(current.getMinutes())
+    
+    myRoutine.forEach(r => {
+        
+        if((r.category != 'idle') && ((r.endTimeH < hr) || (r.endTimeH == hr && r.endTimeM < min)) && (r.done == false) && (r.priority==priority_val))
+        {   
+            var durationOfPendingTask = ((r.endTimeH * 12) + (r.endTimeM /5)) - ((r.startTimeH * 12) + (r.startTimeM /5)) //calculated in slots of 5 mins
+            pendingCategory = r.category
+            pendingTask = r.task
+            pendingPriority = r.priority
+            var r_index = myRoutine.indexOf(r)
+            var i = 0
+            var replaced = false
+            while(i < myRoutine.length && replaced == false){
+                if(myRoutine[i].category == 'idle'){
+                    if(((myRoutine[i].startTimeH == hr) && (myRoutine[i].startTimeM >= min)) || (myRoutine[i].startTimeH > hr) ){
+                        var durationOfIdleTask = ((r.endTimeH * 12) + (r.endTimeM /5)) - ((r.startTimeH * 12) + (r.startTimeM /5)) //calculated in slots of 5 mins
+                        if(durationOfIdleTask >= (durationOfPendingTask - 15)){
+                            myRoutine[i].category = pendingCategory
+                            myRoutine[i].task = pendingTask
+                            myRoutine[i].priority = pendingPriority
+                            
+                            //calculating end time for the realloted task
+                            var H = myRoutine[i].startTimeH
+                            var M = myRoutine[i].startTimeM + (durationOfPendingTask*5)
+                            while(M>59){
+                                H = H+1
+                                M = M-60
+                            }
+                            myRoutine[i].endTimeH = H
+                            myRoutine[i].endTimeM = M
+                            myRoutine[i].done = false
+                            replaced = true
+                        }
+                    }
+                    else{
+                        if(((myRoutine[i].endTimeH == hr) && (myRoutine[i].endTimeM >= min)) || (myRoutine[i].endTimeH > hr)){
+                            var durationOfIdleTask = ((r.endTimeH * 12) + (r.endTimeM /5)) - ((hr * 12) + (min /5)) //calculated in slots
+                            if(durationOfIdleTask >= (durationOfPendingTask - 15)){
+                                myRoutine[i].category = pendingCategory
+                                myRoutine[i].task = pendingTask
+                                myRoutine[i].priority = pendingPriority
+                                myRoutine[i].done = false
+                                myRoutine[i].startTimeH = hr
+                                myRoutine[i].startTimeM = min
+                                var H = hr
+                                var M = min + (durationOfPendingTask*5)
+                                while(M>59){
+                                    H = H+1
+                                    M = M-60
+                                }
+                                myRoutine[i].endTimeH = H
+                                myRoutine[i].endTimeM = M
+                                replaced = true
+                            }
+                        }
+                    }
+                }
+                if(replaced == true){
+                    //should find the idle slots in modified routine and update it in the routine
+                    var categorySlots = prepare(myRoutine)
+                    myRoutine = findIdleTime(categorySlots, myRoutine)
+                }
+                i++;
+            }
+            if(replaced == true){
+                myRoutine[r_index].category = 'idle'
+                myRoutine[r_index].task = 'none'
+                myRoutine[r_index].priority = 'low'
+                myRoutine[r_index].done = false
+            }
+        }
+    })
+    return myRoutine
+}
 //create new planner
 //create new routine
 
@@ -345,81 +423,9 @@ router.get('/rearrange', auth, async (req,res)=>{
         if(flag == true){
             var myRoutine = (obj.routineX).plan
 
-            var current = new Date()
-            var hr = current.getHours()
-            var min = Math.round(current.getMinutes())
+            myRoutine = rearrangePlans(myRoutine, 'high')
+            myRoutine = rearrangePlans(myRoutine, 'low')
             
-            myRoutine.forEach(r => {
-                
-                if((r.category != 'idle') && ((r.endTimeH < hr) || (r.endTimeH == hr && r.endTimeM < min)) && (r.done == false))
-                {   
-                    var durationOfPendingTask = ((r.endTimeH * 12) + (r.endTimeM /5)) - ((r.startTimeH * 12) + (r.startTimeM /5)) //calculated in slots of 5 mins
-                    pendingCategory = r.category
-                    pendingTask = r.task
-                    pendingPriority = r.priority
-                    var r_index = myRoutine.indexOf(r)
-                    var i = 0
-                    var replaced = false
-                    while(i < myRoutine.length && replaced == false){
-                        if(myRoutine[i].category == 'idle'){
-                            if(((myRoutine[i].startTimeH == hr) && (myRoutine[i].startTimeM >= min)) || (myRoutine[i].startTimeH > hr) ){
-                                var durationOfIdleTask = ((r.endTimeH * 12) + (r.endTimeM /5)) - ((r.startTimeH * 12) + (r.startTimeM /5)) //calculated in slots of 5 mins
-                                if(durationOfIdleTask >= (durationOfPendingTask - 15)){
-                                    myRoutine[i].category = pendingCategory
-                                    myRoutine[i].task = pendingTask
-                                    myRoutine[i].priority = pendingPriority
-                                    
-                                    //calculating end time for the realloted task
-                                    var H = myRoutine[i].startTimeH
-                                    var M = myRoutine[i].startTimeM + (durationOfPendingTask*5)
-                                    while(M>59){
-                                        H = H+1
-                                        M = M-60
-                                    }
-                                    myRoutine[i].endTimeH = H
-                                    myRoutine[i].endTimeM = M
-                                    myRoutine[i].done = false
-                                    replaced = true
-                                }
-                            }
-                            else{
-                                if(((myRoutine[i].endTimeH == hr) && (myRoutine[i].endTimeM >= min)) || (myRoutine[i].endTimeH > hr)){
-                                    var durationOfIdleTask = ((r.endTimeH * 12) + (r.endTimeM /5)) - ((hr * 12) + (min /5)) //calculated in slots
-                                    if(durationOfIdleTask >= (durationOfPendingTask - 15)){
-                                        myRoutine[i].category = pendingCategory
-                                        myRoutine[i].task = pendingTask
-                                        myRoutine[i].priority = pendingPriority
-                                        myRoutine[i].done = false
-                                        myRoutine[i].startTimeH = hr
-                                        myRoutine[i].startTimeM = min
-                                        var H = hr
-                                        var M = min + (durationOfPendingTask*5)
-                                        while(M>59){
-                                            H = H+1
-                                            M = M-60
-                                        }
-                                        myRoutine[i].endTimeH = H
-                                        myRoutine[i].endTimeM = M
-                                        replaced = true
-                                    }
-                                }
-                            }
-                        }
-                        if(replaced == true){
-                            //should find the idle slots in modified routine and update it in the routine
-                            var categorySlots = prepare(myRoutine)
-                            myRoutine = findIdleTime(categorySlots, myRoutine)
-                        }
-                        i++;
-                    }
-                    if(replaced == true){
-                        myRoutine[r_index].category = 'idle'
-                        myRoutine[r_index].task = 'none'
-                        myRoutine[r_index].priority = 'low'
-                        myRoutine[r_index].done = false
-                    }
-                }
-            })
             var result = obj.routineX
             result.plan = myRoutine
             return res.json(result)
