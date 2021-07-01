@@ -8,36 +8,115 @@ const cities = require('../../data/cities');
 const { distinct } = require('../../models/Profile');
 
 //common members for create/update plans
+//array, catNo as input
+const countOccurrences = (arr, val) => arr.reduce((a, v) => (v === val ? a + 1 : a), 0); //func to find freq of values in an array
+
 const categories = ['sleep', 'fitness', 'refreshment', 'work', 'chores', 'social', 'leisure', 'hobby', 'others', 'idle'];
 //                      0       1           2             3         4        5          6         7         8       9
 const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
 
-//finds the count of idle and essential categories
-function idleANDessentials(myRoutine){
-    var c_ref = 0;
-    var c_slp = 0;
-    var c_hls = 0;
-    var c_idl = 0;
-    myRoutine.forEach(r => {
-        if(r.category == 'idle')
-            c_idl ++
-        if(r.category == 'refreshment')
-            c_ref ++
-        if(r.category == 'sleep')
-        {
-            //in minutes
-            c_slp += ((((r.endTimeH * 12) + (r.endTimeM / 5)) - ((r.startTimeH * 12) + (r.startTimeM / 5))) * 5)
+function validatePredictedPlan(category, task){
+    
+    //sleep
+    var sleep = countOccurrences(category, categories.indexOf('sleep'))
+    
+    //here, 48 slots = 240 mins = 4 hrs
+    var t = 0
+    while(sleep < 48 && t < 288){
+        var count = 0
+        var start = -1  //invalid
+        var end = -1    //invalid
+
+        if(category[t] == categories.indexOf('idle')){
+            start = t
+            end = t
+            while(category[t] == categories.indexOf('idle')){
+                end++
+                count++
+            }
         }
-        if(r.category == 'hobby' || r.category == 'leisure' || r.category == 'social')
-            c_hls ++
-    });
-    return {c_idl: c_idl, c_ref: c_ref, c_slp: c_slp, c_hls: c_hls}
+
+        if(count >= 6){
+            //here, 6 slots = 30 min
+            for(let slot = start; slot < end; slot++){
+                if(sleep < 48){
+                    category[slot] = categories.indexOf('sleep')
+                    task[slot] = 'sleep'
+                    sleep++
+                }
+            }
+            t = end
+        }
+        else{
+            t++
+        }
+    }
+
+    //refreshment
+    var morning = countOccurrences(category.slice(0,144), categories.indexOf('refreshment'))
+    t=0
+    while(morning==0 && t<144){
+        if(category[t]==categories.indexOf('idle')){
+            category[t] = categories.indexOf('refreshment')
+            task[t] = 'breakfast'
+            morning++
+        }
+        t++
+    }
+
+    var noon = countOccurrences(category.slice(132, 216), categories.indexOf('refreshment'))
+    t=132
+    while(noon==0 && t<216){
+        if(category[t]==categories.indexOf('idle')){
+            category[t] = categories.indexOf('refreshment')
+            task[t] = 'lunch'
+            noon++
+        }
+        t++
+    }
+
+    var evening = countOccurrences(category.slice(204), categories.indexOf('refreshment'))
+    t=204
+    while(evening==0 && t<288){
+        if(category[t]==categories.indexOf('idle')){
+            category[t] = categories.indexOf('refreshment')
+            task[t] = 'dinner'
+            evening++
+        }
+        t++
+    }
+    
+    //hobby,leisure,social
+    var HLS = countOccurrences(category, categories.indexOf('hobby')) + countOccurrences(category, categories.indexOf('leisure')) + countOccurrences(category, categories.indexOf('social'))
+    t=0
+    while(HLS<4 && t<288){
+        var start = -1
+        var end = -1
+        var count = 0
+        if(category[t]==categories.indexOf('idle')){
+            start = t
+            end = t
+            while(category[t]==categories.indexOf('idle')){
+                count++
+                end++
+            }
+
+            if(count >= 4){
+                for(let slot=start; slot<end; slot++){
+                    category[slot]=categories.indexOf('leisure')
+                    task[slot] = 'leisure'
+                    HLS++
+                }
+            }   
+        }
+        t++
+    }
+    return {category: category, task: task}
 }
 
-function validatePredictedPlan(category, task){
+function structureValidatedPlan(category, task){
     var myRoutine = [];
     for(let t = 0; t < 288; t++){
-        
         var cat = categories[category[t]]
         var tsk = task[t]
         var index = t;
@@ -59,79 +138,10 @@ function validatePredictedPlan(category, task){
         myRoutine.push({startTimeH: startTimeH, startTimeM: startTimeM, endTimeH: endTimeH, endTimeM: endTimeM , category: cat, task: tsk, priority: "low", done: false});
         t = index - 1; //cuz it gets incremented by 1
     }
-
-    var counts = idleANDessentials(myRoutine)
-    var c_idl = counts.c_idl
-    var c_ref = counts.c_ref
-    var c_slp = counts.c_slp
-    var c_hls = counts.c_hls
-
-    var direction = 0; //0 represents try including from begining & -1 represents try including from end
-    //if sleep < 4 hrs
-    while((c_slp < 240) && (c_idl != 0)){
-        //here direction is always from top i.e. 0
-        
-        myRoutine = tryIncluding(myRoutine, 'sleep', direction)
-        counts = idleANDessentials(myRoutine)
-        c_idl = counts.c_idl
-        c_slp = counts.c_slp
-    }
-
-    while((c_ref < 3) && (c_idl != 0)){
-        
-        myRoutine = tryIncluding(myRoutine, 'refreshment', direction)
-        counts = idleANDessentials(myRoutine)
-        c_idl = counts.c_idl
-        c_ref = counts.c_ref
-        //toggle direction
-        direction = (direction == 0)? -1 : 0
-    }
-
-    while((c_hls < 1) && (c_idl != 0)){
-        direction = -1
-        
-        myRoutine = tryIncluding(myRoutine, 'hobby', direction)
-        counts = idleANDessentials(myRoutine)
-        c_idl = counts.c_idl
-        c_hls = counts.c_hls
-    }
-    
-    return myRoutine;
+    return myRoutine
 }
 
-function tryIncluding(myRoutine, cat, direction){
-    var replaced = false
-    switch(direction){
-        case 0:{
-            var i = 0;
-            while(replaced == false && i < myRoutine.length){
-                if(myRoutine[i].category == 'idle')
-                {
-                    myRoutine[i].category = cat;
-                    myRoutine[i].task = cat;
-                    replaced = true;
-                }
-                i++
-            }
-        }
-        case -1:{
-            var i = myRoutine.length -1;
-            while(replaced == false && i >= 0){
-                if(myRoutine[i].category == 'idle')
-                {
-                    console.log(cat+' included from down')
-                    myRoutine[i].category = cat;
-                    myRoutine[i].task = cat;
-                    replaced = true;
-                }
-                i--
-            }
-        }
-    }
-    return myRoutine;
-}
-
-//func to prepare skeleton of plans
+//func to prepare skeleton of plans(i.e. get category & task slots for every 5 min slot)
 function prepare(myRoutine){
     var categorySlots = new Array(288).fill(-1);
     var taskSlots = new Array(288).fill('');
@@ -292,9 +302,9 @@ router.get('/plans', auth, async(req, res)=>{
                     reqAcc = reqAcc - 0.05
 
                 console.log('Build:'+buildCount)
-                console.log('Condition:'+((parseInt(acc) < 65) && (buildCount < 2)))
+                console.log('Condition:'+((parseInt(acc) < reqAcc*100-15) && (buildCount < 2)))
                 console.log('------------------------------------------------------')
-                }while((acc < 65) && buildCount < 2 )
+                }while((acc < reqAcc*100-15) && buildCount < 2 )
                 
                 console.log('Accuracy='+ (acc)+'%')
                 
@@ -303,7 +313,7 @@ router.get('/plans', auth, async(req, res)=>{
                     const testVal = tf.tensor2d([today, t], [1, 2]);
                     const prediction = model.predict(testVal);            
                     const categoryPredicted = tf.argMax(prediction, axis=1).dataSync();
-                    category.push(categoryPredicted);
+                    category.push(categoryPredicted[0]);
                 }
 
                 //part2 bulid model to predict tasks given day, time, category
@@ -355,9 +365,9 @@ router.get('/plans', auth, async(req, res)=>{
                         reqAcc2 = reqAcc2 - 0.03
                     //loop will repeat (i.e model will be rebuilt incase accuracy < 80%)
                     console.log('Build:'+buildCount2)
-                    console.log('Condition:'+((parseInt(acc2) < 75) && (buildCount2 < 3)))
+                    console.log('Condition:'+((parseInt(acc2) < reqAcc2*100-25) && (buildCount2 < 2)))
                     console.log('------------------------------------------------------')
-                }while((parseInt(acc2) < 75) && (buildCount2 < 3));
+                }while((parseInt(acc2) < reqAcc2*100-25) && (buildCount2 < 2));
                 
 
                 console.log('Accuracy='+ (acc2)+'%')
@@ -393,9 +403,15 @@ router.get('/plans', auth, async(req, res)=>{
                     dataset2.push([days[features2[i][0]],(parseInt(features2[i][1]/12)+':'+((features2[i][1]-(parseInt(features2[i][1]/12)*12))*5)).toString(),categories[features2[i][2]],target2[i]])
                 }
 
-                var validPlan = validatePredictedPlan(category, task)
+                //var predictedPlan = structureValidatedPlan(category, task)
 
-                return res.json({plan: validPlan, accuracy: (acc*0.9)+(acc2*0.1)})
+                var validatedPlan = validatePredictedPlan(category, task)
+                category = validatedPlan.category
+                task = validatedPlan.task
+
+                var validPlan = structureValidatedPlan(category, task)
+                
+                return res.json({ plan: validPlan, accuracy: (acc*0.9)+(acc2*0.1)})
             }
         }
     } catch (err) {
