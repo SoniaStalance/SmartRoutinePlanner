@@ -5,7 +5,7 @@ const Profile = require('../../models/Profile');
 const tf = require('@tensorflow/tfjs');
 const dataset = require('../../data/userdata');
 const cities = require('../../data/cities');
-const { distinct } = require('../../models/Profile');
+const { distinct } = require('../../models/Profile')
 
 //common members for create/update plans
 //array, catNo as input
@@ -245,7 +245,8 @@ router.get('/plans', auth, async(req, res)=>{
                 var target2 = [];
                 //today
                 var date = new Date();
-                var today = date.getDate();
+                var today = date.getDay();
+                console.log(today)
                 userPlanner.routine.forEach(d=>{
                     if(parseInt(d.score)>=50 && parseInt(d.feedback)>=3)
                     {
@@ -272,7 +273,12 @@ router.get('/plans', auth, async(req, res)=>{
                     }
                 })
                 
-                //bulid model to predict category given day, time
+                //printing the dataset for reference purpose
+                for(let i = 0 ; i < features2.length; i++){
+                    console.log(days[features2[i][0]]+"\t"+features2[i][1]+"\t"+categories[features2[i][2]]+"\t"+target2[i] )
+                }
+                
+                //build model to predict category given day, time
                 const inputTensor = tf.tensor2d(features1, [features1.length, features1[0].length]);
                 const targetTensor = tf.oneHot(tf.tensor1d(target1, 'int32'), categories.length);
                 
@@ -301,10 +307,11 @@ router.get('/plans', auth, async(req, res)=>{
                             c = (parseInt(acc * 100) == prev) ? c+1 : 1
                             prev = parseInt(acc*100)
                             var loss = (logs.loss).toFixed(2)
+                            console.log("Epoch: " + epoch + " Loss: " + loss + " Accuracy: " + (logs.acc*100).toFixed(2) +' c='+c);
+
                             if(loss <= 0.45 || acc >= reqAcc || c >= 10){
                                 model.stopTraining = true
                             }
-                            console.log("Epoch: " + epoch + " Loss: " + loss + " Accuracy: " + (logs.acc*100).toFixed(2) +' c='+c);
                         }
                     }
                     });
@@ -365,10 +372,11 @@ router.get('/plans', auth, async(req, res)=>{
                                 c2 = (parseInt(acc2 * 100) == prev2) ? c2+1 : 1
                                 prev2 = parseInt(acc2*100)
                                 var loss = (logs.loss).toFixed(2)
+                                console.log("Epoch: " + epoch + " Loss: " + loss + " Accuracy: " + (acc2*100).toFixed(2) +' c='+c2);
+
                                 if(loss <= 0.10||acc2 >= reqAcc2||c2 >= 8){
                                     model2.stopTraining = true
                                 }
-                                console.log("Epoch: " + epoch + " Loss: " + loss + " Accuracy: " + (acc2*100).toFixed(2) +' c='+c2);
                             }
                         }
                     });
@@ -405,17 +413,6 @@ router.get('/plans', auth, async(req, res)=>{
                     }
                     
                     task.push(taskPredicted);
-                }
-                console.log('came out')
-                console.log('features1: '+features1.length)
-                console.log('target1 :'+target1.length)
-                console.log('features2: '+features2.length)
-                console.log('numeric_target2 :'+numeric_target2.length)
-                var dataset1 = [];
-                var dataset2 = [];
-                for(let i=0; i < features1.length; i++){
-                    dataset1.push([days[features1[i][0]],(parseInt(features1[i][1]/12)+':'+((features1[i][1]-(parseInt(features1[i][1]/12)*12))*5)).toString(),categories[target1[i]]])
-                    dataset2.push([days[features2[i][0]],(parseInt(features2[i][1]/12)+':'+((features2[i][1]-(parseInt(features2[i][1]/12)*12))*5)).toString(),categories[features2[i][2]],target2[i]])
                 }
 
                 var validatedPlan = validatePredictedPlan(category, task)
@@ -533,11 +530,11 @@ router.get('/hobbies', auth, async (req,res)=>{
                         acc = logs.acc
                         c = (parseInt(acc * 100) == prev) ? c+1 : 1
                         prev = parseInt(acc*100)
-                        
+                        console.log("Epoch: " + epoch + " Loss: " + (logs.loss).toFixed(2) + " Accuracy: " + (logs.acc*100).toFixed(2) +' c='+c);
+
                         if(logs.loss < 1 ||acc >= 0.58 || c >= 12){
                             model.stopTraining = true
                         }
-                        console.log("Epoch: " + epoch + " Loss: " + (logs.loss).toFixed(2) + " Accuracy: " + (logs.acc*100).toFixed(2) +' c='+c);
                     }
                 }
               });

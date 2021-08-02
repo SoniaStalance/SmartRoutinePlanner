@@ -163,7 +163,11 @@ const { ExpandDims } = require('@tensorflow/tfjs');
         {
             w = w - 0.75; //because refreshments(i.e. meals) are highly essential
         }
-        return (w/TW)*100;
+        var s=0
+        if((w/TW)*100 > 0)
+            s = (w/TW)*100
+
+        return s;
     }
 
 //common members for create/update plans ends here------------
