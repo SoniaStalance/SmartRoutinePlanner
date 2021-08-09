@@ -191,38 +191,44 @@ function rearrangePlans(myRoutine, priority_val){
             while(i < myRoutine.length && replaced == false){
                 if(myRoutine[i].category == 'idle'){
                     if(((myRoutine[i].startTimeH == hr) && (myRoutine[i].startTimeM >= min)) || (myRoutine[i].startTimeH > hr) ){
-                        var durationOfIdleTask = ((r.endTimeH * 12) + (r.endTimeM /5)) - ((r.startTimeH * 12) + (r.startTimeM /5)) //calculated in slots of 5 mins
-                        if(durationOfIdleTask >= (durationOfPendingTask - 15)){
+                        var durationOfIdleTask = ((myRoutine[i].endTimeH * 12) + (myRoutine[i].endTimeM /5)) - ((myRoutine[i].startTimeH * 12) + (myRoutine[i].startTimeM /5)) //calculated in slots of 5 mins
+                        if(durationOfIdleTask >= (durationOfPendingTask - 3)){
+
                             myRoutine[i].category = pendingCategory
                             myRoutine[i].task = pendingTask
                             myRoutine[i].priority = pendingPriority
                             
                             //calculating end time for the realloted task
+                            var x = (durationOfPendingTask*5) > (durationOfIdleTask*5) ? (durationOfIdleTask*5) : (durationOfPendingTask*5)
                             var H = myRoutine[i].startTimeH
-                            var M = myRoutine[i].startTimeM + (durationOfPendingTask*5)
-                            while(M>59){
+                            var M = myRoutine[i].startTimeM + x
+                            while(H<24 && M>59){
                                 H = H+1
                                 M = M-60
                             }
                             myRoutine[i].endTimeH = H
                             myRoutine[i].endTimeM = M
                             myRoutine[i].done = false
+                            
                             replaced = true
                         }
                     }
                     else{
                         if(((myRoutine[i].endTimeH == hr) && (myRoutine[i].endTimeM >= min)) || (myRoutine[i].endTimeH > hr)){
-                            var durationOfIdleTask = ((r.endTimeH * 12) + (r.endTimeM /5)) - ((hr * 12) + (min /5)) //calculated in slots
-                            if(durationOfIdleTask >= (durationOfPendingTask - 15)){
+                            var durationOfIdleTask = ((myRoutine[i].endTimeH * 12) + (myRoutine[i].endTimeM /5)) - ((hr * 12) + (min /5)) //calculated in slots
+                            if(durationOfIdleTask >= (durationOfPendingTask - 3)){
                                 myRoutine[i].category = pendingCategory
                                 myRoutine[i].task = pendingTask
                                 myRoutine[i].priority = pendingPriority
                                 myRoutine[i].done = false
                                 myRoutine[i].startTimeH = hr
                                 myRoutine[i].startTimeM = min
+
+                                var x = (durationOfPendingTask*5) > (durationOfIdleTask*5) ? (durationOfIdleTask*5) : (durationOfPendingTask*5)
+
                                 var H = hr
-                                var M = min + (durationOfPendingTask*5)
-                                while(M>59){
+                                var M = min + x
+                                while(H<24 && M>59){
                                     H = H+1
                                     M = M-60
                                 }
